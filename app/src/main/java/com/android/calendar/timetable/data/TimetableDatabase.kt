@@ -17,8 +17,12 @@ import androidx.room.RoomDatabase
         GeneratedEvent::class,
     ],
     version = 2,
-    exportSchema = false,
+    exportSchema = true,
 )
+/*
+ * Schema history is exported to app/schemas. The app now holds real user data:
+ * every version bump MUST come with a Migration (no destructive fallback).
+ */
 abstract class TimetableDatabase : RoomDatabase() {
     abstract fun timetableDao(): TimetableDao
 
@@ -32,7 +36,7 @@ abstract class TimetableDatabase : RoomDatabase() {
                     context.applicationContext,
                     TimetableDatabase::class.java,
                     "etar_timetable.db"
-                ).fallbackToDestructiveMigration().build().also { instance = it }
+                ).build().also { instance = it }
             }
     }
 }

@@ -13,10 +13,15 @@ import android.provider.CalendarContract.Colors
 import android.provider.CalendarContract.Events
 import android.provider.CalendarContract.ExtendedProperties
 import android.provider.CalendarContract.Reminders
+import androidx.room.withTransaction
 import com.android.calendar.persistence.CalendarRepository
+import com.android.calendar.timetable.io.TaskIcs
+import com.android.calendar.timetable.io.TimetableBackup
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.time.LocalDate
@@ -60,7 +65,8 @@ data class GenerationPreview(
 
 class TimetableRepository private constructor(private val app: Application) {
 
-    private val dao = TimetableDatabase.get(app).timetableDao()
+    private val database = TimetableDatabase.get(app)
+    private val dao = database.timetableDao()
 
     /** Single flow used by the timetable view; updates whenever any part of the model changes. */
     val data: Flow<TimetableData> = combine(
@@ -189,6 +195,68 @@ class TimetableRepository private constructor(private val app: Application) {
             put(ExtendedProperties.VALUE, task.id.toString())
         })
         return eventId
+    }
+
+    // ---- Export / import --------------------------------------------------
+
+    /** All tasks as an RFC 5545 calendar of VTODOs. */
+    suspend fun exportTasksIcs(): String = withContext(Dispatchers.IO) {
+        TaskIcs.write(dao.allTasks(), dao.courses())
+    }
+
+    suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
+        TimetableBackup.encode(data.first())
+    }
+
+    /**
+     * Imports VTODOs as plain tasks (not linked to a course, see US-5.2) and mirrors
+     * their due dates into the calendar. Returns the number of tasks created.
+     */
+    suspend fun importTodos(todos: List<TaskIcs.Todo>): Int = withContext(Dispatchers.IO) {
+        val untitled = app.getString(R.string.todo_untitled)
+        for (todo in todos) {
+            addTaskSynced(Task(
+                title = todo.summary.ifEmpty { untitled },
+                note = todo.description,
+                dueAtMillis = todo.dueMillis,
+                completed = todo.completed,
+                completedAtMillis = if (todo.completed) todo.completedMillis ?: System.currentTimeMillis() else null,
+            ))
+        }
+        todos.size
+    }
+
+    /**
+     * Replaces all timetable data with [backup]. Calendar events this app created
+     * (class events and task deadlines) are removed and rebuilt from the restored data.
+     */
+    suspend fun restoreBackup(backup: TimetableData) = withContext(Dispatchers.IO + NonCancellable) {
+        val resolver = app.contentResolver
+        // Tracked events plus any marked events whose bookkeeping was lost.
+        val oldEventIds = dao.allGeneratedEvents().map { it.eventId } +
+            dao.allTasks().mapNotNull { it.calendarEventId } + markedEventIds()
+        oldEventIds.toSet().forEach { resolver.delete(eventUri(it), null, null) }
+
+        database.withTransaction {
+            dao.deleteAllGeneratedEvents()
+            dao.deleteAllTasks()
+            dao.deleteAllFreeDays()
+            dao.deleteAllOneTimeSlots()
+            dao.deleteAllRegularSlots()
+            dao.deleteAllCourseTerms()
+            dao.deleteAllCourses()
+            dao.deleteAllTerms()
+            dao.insertTerms(backup.terms)
+            dao.insertCourses(backup.courses)
+            dao.insertCourseTerms(backup.courseTerms)
+            dao.insertRegularSlots(backup.regularSlots)
+            dao.insertOneTimeSlots(backup.oneTimeSlots)
+            dao.insertFreeDays(backup.freeDays)
+            dao.insertTasks(backup.tasks.map { it.copy(calendarEventId = null) })
+        }
+
+        for (term in dao.allTerms()) applyGeneration(buildPreview(term.id))
+        for (task in dao.allTasks()) updateTaskSynced(task)
     }
 
     /** Used by the event editor to warn that an event belongs to the timetable. */
@@ -449,6 +517,16 @@ class TimetableRepository private constructor(private val app: Application) {
         put("slotId", event.slotId)
         put("fingerprint", event.fingerprint)
     }.toString()
+
+    /** Ids of all events carrying one of this app's ExtendedProperties markers. */
+    private fun markedEventIds(): List<Long> {
+        val ids = ArrayList<Long>()
+        app.contentResolver.query(
+            extendedPropertiesUri(), arrayOf(ExtendedProperties.EVENT_ID),
+            "${ExtendedProperties.NAME} IN (?, ?)", arrayOf(MARKER, TASK_MARKER), null
+        )?.use { while (it.moveToNext()) ids += it.getLong(0) }
+        return ids
+    }
 
     private fun extendedPropertiesUri(): Uri =
         CalendarRepository.asLocalCalendarSyncAdapter(CALENDAR_ACCOUNT, ExtendedProperties.CONTENT_URI)

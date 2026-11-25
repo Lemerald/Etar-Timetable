@@ -12,6 +12,10 @@ kotlin {
     jvmToolchain(21)
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
 	namespace = "ws.xsoh.etar"
 	testNamespace = "com.android.calendar.tests"
@@ -128,6 +132,8 @@ dependencies {
     implementation(libs.androidx.concurrent.futures)
     testImplementation(libs.junit)
 	testImplementation(libs.androidx.test.runner)
+	// Real org.json for JVM unit tests (android.jar only ships stubs)
+	testImplementation(libs.json)
 
 	coreLibraryDesugaring(libs.android.tools.desugar)
 

@@ -1,6 +1,7 @@
 package com.android.calendar.timetable.ui.manage
 
 import android.app.AlertDialog
+import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -15,6 +16,7 @@ import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.setPadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
@@ -30,11 +32,15 @@ import com.android.calendar.timetable.data.Term
 import com.android.calendar.timetable.data.TimetableData
 import com.android.calendar.timetable.data.TimetableRepository
 import com.android.calendar.timetable.data.minutesToTime
+import com.android.calendar.timetable.io.TimetableBackup
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.timepicker.MaterialTimePicker
 import com.google.android.material.timepicker.TimeFormat
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -76,6 +82,7 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         addButton(getString(R.string.timetable_new_term)) { showTermDialog(null) }
         if (data.terms.isEmpty()) {
             addNote(getString(R.string.timetable_no_terms))
+            renderBackupSection()
             return
         }
         val term = data.terms.first { it.id == activeTermId }
@@ -189,6 +196,87 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
                 val preview = repository.buildPreview(term.id)
                 if (isAdded) showPreview(preview)
             }
+        }
+        renderBackupSection()
+    }
+
+    // ---- Export / backup --------------------------------------------------
+    private val exportTasksLauncher =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("text/calendar")) { uri ->
+            if (uri != null) writeDocument(uri) { repository.exportTasksIcs() }
+        }
+
+    private val exportBackupLauncher =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+            if (uri != null) writeDocument(uri) { repository.exportBackupJson() }
+        }
+
+    private val restoreLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) readBackup(uri)
+        }
+
+    private fun renderBackupSection() {
+        addHeading(getString(R.string.timetable_backup_heading))
+        addNote(getString(R.string.timetable_backup_note))
+        addButton(getString(R.string.timetable_export_tasks_ics)) {
+            exportTasksLauncher.launch("tasks-${LocalDate.now()}.ics")
+        }
+        addButton(getString(R.string.timetable_export_backup)) {
+            exportBackupLauncher.launch("timetable-backup-${LocalDate.now()}.json")
+        }
+        addButton(getString(R.string.timetable_restore_backup)) {
+            // Some file managers label JSON as octet-stream or plain text.
+            restoreLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/plain"))
+        }
+    }
+
+    private fun writeDocument(uri: Uri, content: suspend () -> String) {
+        val context = requireContext().applicationContext
+        launch {
+            val ok = try {
+                val text = content()
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray()) }
+                } != null
+            } catch (e: IOException) {
+                false
+            }
+            Toast.makeText(context, if (ok) R.string.timetable_export_done else R.string.timetable_export_failed,
+                Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun readBackup(uri: Uri) {
+        val context = requireContext().applicationContext
+        launch {
+            val backup = try {
+                val text = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                } ?: throw IOException("Cannot open file")
+                withContext(Dispatchers.Default) { TimetableBackup.decode(text) }
+            } catch (e: Exception) {
+                if (e !is IOException && e !is TimetableBackup.InvalidBackupException) throw e
+                if (isAdded) MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.timetable_restore_failed)
+                    .setMessage(e.message)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+                return@launch
+            }
+            if (!isAdded) return@launch
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.timetable_restore_backup)
+                .setMessage(getString(R.string.timetable_restore_confirm,
+                    backup.terms.size, backup.courses.size, backup.tasks.size))
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.timetable_restore_action) { _, _ ->
+                    launch {
+                        repository.restoreBackup(backup)
+                        Toast.makeText(context, R.string.timetable_restore_done, Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .show()
         }
     }
 

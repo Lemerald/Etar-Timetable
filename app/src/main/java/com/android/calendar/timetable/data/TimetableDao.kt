@@ -127,4 +127,46 @@ interface TimetableDao {
 
     @Query("DELETE FROM generated_events WHERE termId = :termId")
     suspend fun deleteGeneratedEventsForTerm(termId: Long)
+
+    // ---- Backup / restore -------------------------------------------------
+    @Query("SELECT * FROM generated_events")
+    suspend fun allGeneratedEvents(): List<GeneratedEvent>
+
+    @Query("SELECT * FROM tasks")
+    suspend fun allTasks(): List<Task>
+
+    @Query("SELECT * FROM terms")
+    suspend fun allTerms(): List<Term>
+
+    @Query("DELETE FROM generated_events")
+    suspend fun deleteAllGeneratedEvents()
+
+    @Query("DELETE FROM tasks")
+    suspend fun deleteAllTasks()
+
+    @Query("DELETE FROM free_days")
+    suspend fun deleteAllFreeDays()
+
+    @Query("DELETE FROM one_time_slots")
+    suspend fun deleteAllOneTimeSlots()
+
+    @Query("DELETE FROM regular_slots")
+    suspend fun deleteAllRegularSlots()
+
+    @Query("DELETE FROM course_terms")
+    suspend fun deleteAllCourseTerms()
+
+    @Query("DELETE FROM courses")
+    suspend fun deleteAllCourses()
+
+    @Query("DELETE FROM terms")
+    suspend fun deleteAllTerms()
+
+    @Insert suspend fun insertTerms(items: List<Term>)
+    @Insert suspend fun insertCourses(items: List<Course>)
+    @Insert suspend fun insertCourseTerms(items: List<CourseTerm>)
+    @Insert suspend fun insertRegularSlots(items: List<RegularSlot>)
+    @Insert suspend fun insertOneTimeSlots(items: List<OneTimeSlot>)
+    @Insert suspend fun insertFreeDays(items: List<FreeDay>)
+    @Insert suspend fun insertTasks(items: List<Task>)
 }

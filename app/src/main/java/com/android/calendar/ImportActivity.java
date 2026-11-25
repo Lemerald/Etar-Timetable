@@ -19,12 +19,14 @@ import com.android.calendar.icalendar.Attendee;
 import com.android.calendar.icalendar.IcalendarUtils;
 import com.android.calendar.icalendar.VCalendar;
 import com.android.calendar.icalendar.VEvent;
+import com.android.calendar.timetable.io.TaskImport;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.io.File;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.LinkedList;
@@ -126,19 +128,27 @@ public class ImportActivity extends Activity {
 
     private void parseCalFile() {
         Uri uri = getIntent().getData();
-        VCalendar calendar = IcalendarUtils.readCalendarFromFile(this, uri);
-
-        if (calendar == null) {
+        ArrayList<String> lines = IcalendarUtils.getStringArrayFromFile(this, uri);
+        if (lines == null || lines.isEmpty()) {
             showErrorToast();
             return;
         }
+        VCalendar calendar = new VCalendar();
+        calendar.populateFromString(lines);
+
+        // Timetable extension: VTODOs become tasks (imported in the background).
+        int todoCount = TaskImport.importInBackground(getApplicationContext(), lines);
 
         Intent calIntent = new Intent(Intent.ACTION_INSERT);
         calIntent.setType("vnd.android.cursor.item/event");
 
         LinkedList<VEvent> events = calendar.getAllEvents();
-        if (events == null) {
-            showErrorToast();
+        if (events == null || events.isEmpty()) {
+            if (todoCount > 0) {
+                finish();
+            } else {
+                showErrorToast();
+            }
             return;
         }
 
