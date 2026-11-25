@@ -19,6 +19,7 @@ import com.android.calendar.timetable.io.TaskIcs
 import com.android.calendar.timetable.reminders.DueSummary
 import com.android.calendar.timetable.reminders.ReminderSettings
 import com.android.calendar.timetable.sync.OpenTasksSync
+import com.android.calendar.timetable.sync.TaskSyncEngine
 import com.android.calendar.timetable.io.TimetableBackup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -327,6 +328,7 @@ class TimetableRepository private constructor(private val app: Application) {
                 dueAtMillis = todo.dueMillis,
                 completed = todo.completed,
                 completedAtMillis = if (todo.completed) todo.completedMillis ?: System.currentTimeMillis() else null,
+                priority = TaskSyncEngine.fromRfcPriority(todo.priority),
             ))
         }
         todos.size

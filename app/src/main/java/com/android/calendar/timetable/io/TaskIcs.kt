@@ -10,6 +10,8 @@ package com.android.calendar.timetable.io
 
 import com.android.calendar.timetable.data.Course
 import com.android.calendar.timetable.data.Task
+import com.android.calendar.timetable.data.TaskPriority
+import com.android.calendar.timetable.sync.TaskSyncEngine
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -33,6 +35,9 @@ object TaskIcs {
         val completed: Boolean,
         val completedMillis: Long?,
         val categories: List<String>,
+        /** RFC 5545 priority (0 = undefined, 1 highest … 9 lowest). */
+        val priority: Int = 0,
+        val startMillis: Long? = null,
     )
 
     private const val PRODID = "-//Etar-Timetable//Tasks//EN"
@@ -61,7 +66,14 @@ object TaskIcs {
             line("CREATED:${utc(task.createdAtMillis)}")
             line("SUMMARY:${escape(task.title)}")
             if (task.note.isNotEmpty()) line("DESCRIPTION:${escape(task.note)}")
-            task.dueAtMillis?.let { line("DUE:${utc(it)}") }
+            if (task.isExam) {
+                // Exams: DTSTART..DUE is the exam time (same mapping as the DAVx5 bridge).
+                task.dueAtMillis?.let { line("DTSTART:${utc(it)}") }
+                (task.endAtMillis ?: task.dueAtMillis)?.let { line("DUE:${utc(it)}") }
+            } else {
+                task.dueAtMillis?.let { line("DUE:${utc(it)}") }
+            }
+            if (task.priority != TaskPriority.NONE) line("PRIORITY:${TaskSyncEngine.toRfcPriority(task.priority)}")
             task.courseId?.let(courseNames::get)?.let { line("CATEGORIES:${escape(it)}") }
             if (task.completed) {
                 line("STATUS:COMPLETED")
@@ -189,6 +201,8 @@ object TaskIcs {
             dueMillis = first("DUE")?.let { parseDateTime(it, zone) },
             completed = status == "COMPLETED" || completedMillis != null || percent == 100,
             completedMillis = completedMillis,
+            priority = first("PRIORITY")?.value?.trim()?.toIntOrNull() ?: 0,
+            startMillis = first("DTSTART")?.let { parseDateTime(it, zone) },
             categories = props["CATEGORIES"].orEmpty()
                 .flatMap { splitList(it.value) }.map { unescape(it).trim() }.filter { it.isNotEmpty() },
         )

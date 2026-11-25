@@ -103,6 +103,19 @@ class TaskIcsTest {
     }
 
     @Test
+    fun priorityAndExamTimes() {
+        val tasks = listOf(
+            Task(id = 1, title = "p", priority = com.android.calendar.timetable.data.TaskPriority.HIGH, createdAtMillis = 0),
+            Task(id = 2, title = "exam", kind = com.android.calendar.timetable.data.TaskKind.EXAM,
+                dueAtMillis = millis("2026-12-02T11:00"), endAtMillis = millis("2026-12-02T12:30"), createdAtMillis = 0),
+        )
+        val parsed = TaskIcs.parse(TaskIcs.write(tasks, emptyList(), 0), berlin)
+        assertEquals(1, parsed[0].priority)
+        assertEquals(millis("2026-12-02T11:00"), parsed[1].startMillis)
+        assertEquals(millis("2026-12-02T12:30"), parsed[1].dueMillis)
+    }
+
+    @Test
     fun unparseableDueIsIgnored() {
         val todo = TaskIcs.parse("BEGIN:VTODO\nSUMMARY:x\nDUE:garbage\nEND:VTODO", berlin).single()
         assertNull(todo.dueMillis)
