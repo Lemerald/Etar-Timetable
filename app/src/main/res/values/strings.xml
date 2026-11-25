@@ -938,7 +938,13 @@
     <string name="timetable_new_term">New term</string>
     <string name="timetable_edit_term">Edit term</string>
     <string name="timetable_delete_term">Delete term</string>
-    <string name="timetable_delete_term_confirm">Delete term %1$s and all its courses and slots? Generated calendar events will not be deleted.</string>
+    <string name="timetable_delete_term_confirm">Delete term %1$s with its slots and free days? Courses are kept.</string>
+    <plurals name="timetable_delete_term_with_events">
+        <item quantity="one">Delete term %1$s with its slots and free days? Courses are kept. Its %2$d class event in the calendar can be deleted too, or kept as a normal event.</item>
+        <item quantity="other">Delete term %1$s with its slots and free days? Courses are kept. Its %2$d class events in the calendar can be deleted too, or kept as normal events.</item>
+    </plurals>
+    <string name="timetable_delete_term_keep_events">Keep events</string>
+    <string name="timetable_delete_term_and_events">Delete events</string>
     <string name="timetable_courses">Courses</string>
     <string name="timetable_new_course">New course</string>
     <string name="timetable_edit_course">Edit course</string>

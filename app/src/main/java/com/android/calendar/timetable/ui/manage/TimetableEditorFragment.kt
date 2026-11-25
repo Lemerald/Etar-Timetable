@@ -112,9 +112,28 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
             showTermDialog(term)
         })
         termRow.addView(iconButton(R.drawable.outline_delete_event, R.string.timetable_delete_term) {
-            confirm(getString(R.string.timetable_delete_term),
-                getString(R.string.timetable_delete_term_confirm, term.name)) {
-                launch { repository.deleteTerm(term) }
+            launch {
+                val eventCount = repository.generatedEventCount(term.id)
+                if (!isAdded) return@launch
+                val builder = MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.timetable_delete_term)
+                    .setNegativeButton(android.R.string.cancel, null)
+                if (eventCount == 0) {
+                    builder.setMessage(getString(R.string.timetable_delete_term_confirm, term.name))
+                        .setPositiveButton(R.string.timetable_delete_term) { _, _ ->
+                            launch { repository.deleteTerm(term, deleteEvents = false) }
+                        }
+                } else {
+                    builder.setMessage(resources.getQuantityString(R.plurals.timetable_delete_term_with_events,
+                        eventCount, term.name, eventCount))
+                        .setPositiveButton(R.string.timetable_delete_term_keep_events) { _, _ ->
+                            launch { repository.deleteTerm(term, deleteEvents = false) }
+                        }
+                        .setNeutralButton(R.string.timetable_delete_term_and_events) { _, _ ->
+                            launch { repository.deleteTerm(term, deleteEvents = true) }
+                        }
+                }
+                builder.show()
             }
         })
         container.addView(termRow)

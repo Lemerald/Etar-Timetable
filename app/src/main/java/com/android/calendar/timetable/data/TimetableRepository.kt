@@ -98,7 +98,26 @@ class TimetableRepository private constructor(private val app: Application) {
 
     suspend fun updateTerm(term: Term) = dao.updateTerm(term)
 
-    suspend fun deleteTerm(term: Term) = dao.deleteTerm(term)
+    suspend fun generatedEventCount(termId: Long): Int = dao.generatedEvents(termId).size
+
+    /**
+     * Deletes a term with its slots and free days. Its generated class events are either
+     * deleted or kept as ordinary events (marker removed, so later regeneration or a
+     * backup restore never touches them).
+     */
+    suspend fun deleteTerm(term: Term, deleteEvents: Boolean) = withContext(Dispatchers.IO + NonCancellable) {
+        val resolver = app.contentResolver
+        for (generated in dao.generatedEvents(term.id)) {
+            if (deleteEvents) {
+                resolver.delete(eventUri(generated.eventId), null, null)
+            } else {
+                resolver.delete(extendedPropertiesUri(),
+                    "${ExtendedProperties.EVENT_ID}=? AND ${ExtendedProperties.NAME}=?",
+                    arrayOf(generated.eventId.toString(), MARKER))
+            }
+        }
+        dao.deleteTerm(term)
+    }
 
     suspend fun addCourse(name: String, teacher: String, room: String, color: Int) =
         dao.insertCourse(Course(name = name, teacher = teacher, room = room, color = color))
