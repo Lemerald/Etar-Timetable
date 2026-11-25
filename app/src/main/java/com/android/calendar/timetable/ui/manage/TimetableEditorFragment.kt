@@ -40,6 +40,7 @@ import com.android.calendar.timetable.data.Term
 import com.android.calendar.timetable.data.TimetableData
 import com.android.calendar.timetable.data.TimetableRepository
 import com.android.calendar.timetable.data.minutesToTime
+import com.android.calendar.timetable.io.AutoBackup
 import com.android.calendar.timetable.io.TimetableBackup
 import com.android.calendar.timetable.reminders.ReminderSettings
 import com.android.calendar.timetable.sync.OpenTasksSync
@@ -544,9 +545,42 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         else -> getString(R.string.timetable_reminder_minutes, minutes)
     }
 
+    private val autoBackupFolderLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+            if (tree != null) {
+                AutoBackup.enable(requireContext(), tree)
+                toast(R.string.timetable_auto_backup_enabled)
+                render()
+            }
+        }
+
     private fun renderBackupSection() {
         addHeading(getString(R.string.timetable_backup_heading))
         addNote(getString(R.string.timetable_backup_note))
+
+        val ctx = requireContext()
+        val folder = AutoBackup.folderName(ctx)
+        if (folder == null) {
+            addNote(getString(R.string.timetable_auto_backup_off))
+            addButton(getString(R.string.timetable_auto_backup_choose)) { autoBackupFolderLauncher.launch(null) }
+        } else {
+            val last = AutoBackup.lastSuccess(ctx).takeIf { it > 0 }?.let {
+                Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())
+                    .format(DateTimeFormatter.ofPattern("d/M HH:mm", Locale.getDefault()))
+            } ?: "–"
+            addNote(getString(R.string.timetable_auto_backup_status, folder, last, AutoBackup.KEEP) +
+                (AutoBackup.lastError(ctx)?.let { "\n" + getString(R.string.timetable_auto_backup_error, it) } ?: ""))
+            addButton(getString(R.string.timetable_auto_backup_now)) {
+                launch {
+                    val ok = AutoBackup.backup(ctx)
+                    toast(if (ok) R.string.timetable_export_done else R.string.timetable_export_failed)
+                    if (isAdded) render()
+                }
+            }
+            addButton(getString(R.string.timetable_auto_backup_change)) { autoBackupFolderLauncher.launch(null) }
+            addButton(getString(R.string.timetable_auto_backup_disable)) { AutoBackup.disable(ctx); render() }
+        }
+
         addButton(getString(R.string.timetable_export_tasks_ics)) {
             exportTasksLauncher.launch("tasks-${LocalDate.now()}.ics")
         }

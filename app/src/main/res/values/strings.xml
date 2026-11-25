@@ -993,6 +993,14 @@
     <string name="timetable_location_preview">Calendar location: %1$s</string>
     <string name="timetable_no_location">none</string>
     <string name="timetable_locations_regenerate">Generate the schedule to update class locations</string>
+    <string name="timetable_auto_backup_off">Automatic daily backup is off. Choose a folder (on this device, or e.g. in the Nextcloud app) and a backup is written there every day.</string>
+    <string name="timetable_auto_backup_choose">Turn on daily backups…</string>
+    <string name="timetable_auto_backup_status">Daily backup to “%1$s”. Last backup: %2$s. The newest %3$d backups are kept.</string>
+    <string name="timetable_auto_backup_error">Last attempt failed: %1$s</string>
+    <string name="timetable_auto_backup_now">Back up now</string>
+    <string name="timetable_auto_backup_change">Change backup folder</string>
+    <string name="timetable_auto_backup_disable">Turn off daily backups</string>
+    <string name="timetable_auto_backup_enabled">Daily backups on; the first one is being written now</string>
     <string name="todo_untitled">Untitled task</string>
     <string name="timetable_backup_heading">Backup &amp; export</string>
     <string name="timetable_backup_note">Class events and calendars can be exported as .ics from the calendar settings. Restoring a backup replaces all timetable data on this device.</string>

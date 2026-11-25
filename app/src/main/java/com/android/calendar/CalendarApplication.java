@@ -33,6 +33,8 @@ public class CalendarApplication extends Application {
         com.android.calendar.timetable.reminders.DueSummary.schedule(this);
         // Timetable extension: two-way task sync with DAVx5 via Tasks.org/OpenTasks (if set up).
         com.android.calendar.timetable.sync.OpenTasksSync.start(this);
+        // Timetable extension: daily automatic JSON backups (if a folder was chosen).
+        com.android.calendar.timetable.io.AutoBackup.schedule(this);
         mCurrentNightMode = getResources().getConfiguration().uiMode
                 & Configuration.UI_MODE_NIGHT_MASK;
 
