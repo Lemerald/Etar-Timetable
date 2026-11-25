@@ -76,6 +76,9 @@ import com.android.calendar.Utils;
 import com.android.calendar.calendarcommon2.Time;
 import com.android.calendar.colorpicker.ColorPickerSwatch.OnColorSelectedListener;
 import com.android.calendar.colorpicker.HsvColorComparator;
+import com.android.calendar.timetable.GeneratedEvents;
+import com.android.calendar.timetable.data.GeneratedEvent;
+import com.android.calendar.timetable.ui.manage.TimetableEditorActivity;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.io.Serializable;
@@ -96,6 +99,7 @@ public class EditEventFragment extends Fragment implements EventHandler, OnColor
     private static final String BUNDLE_KEY_READ_ONLY = "key_read_only";
     private static final String BUNDLE_KEY_EDIT_ON_LAUNCH = "key_edit_on_launch";
     private static final String BUNDLE_KEY_SHOW_COLOR_PALETTE = "show_color_palette";
+    private static final String BUNDLE_KEY_GENERATED_WARNING_SHOWN = "generated_warning_shown";
 
     private static final String BUNDLE_KEY_DATE_BUTTON_CLICKED = "date_button_clicked";
 
@@ -140,6 +144,7 @@ public class EditEventFragment extends Fragment implements EventHandler, OnColor
     private EventColorPickerDialog mColorPickerDialog;
     private AppCompatActivity mActivity;
     private boolean mSaveOnDetach = true;
+    private boolean mGeneratedWarningShown = false;
     private boolean mIsReadOnly = false;
     private boolean mShowColorPalette = false;
     private InputMethodManager mInputMethodManager;
@@ -187,6 +192,19 @@ public class EditEventFragment extends Fragment implements EventHandler, OnColor
             mEventColor = eventColor;
         }
         setHasOptionsMenu(true);
+    }
+
+    private void showGeneratedEventWarning(GeneratedEvent generated) {
+        new MaterialAlertDialogBuilder(mActivity)
+                .setTitle(R.string.timetable_generated_event_title)
+                .setMessage(R.string.timetable_generated_event_message)
+                .setNegativeButton(R.string.timetable_edit_anyway, null)
+                .setPositiveButton(R.string.timetable_open_timetable_editor, (dialog, which) -> {
+                    Intent intent = new Intent(mActivity, TimetableEditorActivity.class);
+                    intent.putExtra(TimetableEditorActivity.EXTRA_TERM_ID, generated.getTermId());
+                    mActivity.startActivity(intent);
+                })
+                .show();
     }
 
     private void setModelIfDone(int queryType) {
@@ -388,6 +406,7 @@ public class EditEventFragment extends Fragment implements EventHandler, OnColor
             if (savedInstanceState.containsKey(BUNDLE_KEY_READ_ONLY)) {
                 mIsReadOnly = savedInstanceState.getBoolean(BUNDLE_KEY_READ_ONLY);
             }
+            mGeneratedWarningShown = savedInstanceState.getBoolean(BUNDLE_KEY_GENERATED_WARNING_SHOWN, false);
             if (savedInstanceState.containsKey(BUNDLE_KEY_SHOW_COLOR_PALETTE)) {
                 mShowColorPalette = savedInstanceState.getBoolean(BUNDLE_KEY_SHOW_COLOR_PALETTE);
             }
@@ -629,6 +648,7 @@ public class EditEventFragment extends Fragment implements EventHandler, OnColor
         outState.putBoolean(BUNDLE_KEY_EDIT_ON_LAUNCH, mShowModifyDialogOnLaunch);
         outState.putSerializable(BUNDLE_KEY_EVENT, mEventBundle);
         outState.putBoolean(BUNDLE_KEY_READ_ONLY, mIsReadOnly);
+        outState.putBoolean(BUNDLE_KEY_GENERATED_WARNING_SHOWN, mGeneratedWarningShown);
         outState.putBoolean(BUNDLE_KEY_SHOW_COLOR_PALETTE, mView.isColorPaletteVisible());
     }
 
@@ -716,6 +736,16 @@ public class EditEventFragment extends Fragment implements EventHandler, OnColor
                         mModel.setEventColor(mEventColor);
                     }
                     eventId = mModel.mId;
+
+                    // Warn when editing an event that was generated from a timetable slot.
+                    if (!mGeneratedWarningShown && eventId > 0 && mActivity != null) {
+                        GeneratedEvents.check(mActivity, eventId, generated -> {
+                            if (generated != null && !mGeneratedWarningShown && isAdded()) {
+                                mGeneratedWarningShown = true;
+                                showGeneratedEventWarning(generated);
+                            }
+                        });
+                    }
 
                     // TOKEN_ATTENDEES
                     if (mModel.mHasAttendeeData && eventId != -1) {

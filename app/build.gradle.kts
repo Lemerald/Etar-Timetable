@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.ec4j.editorconfig)
+    alias(libs.plugins.ksp)
 }
 
 editorconfig {
@@ -138,4 +139,11 @@ dependencies {
 
 	// lifecycle
 	implementation(libs.androidx.lifecycle.livedata)
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+
+    // Room — source of truth for timetable data (terms, courses, slots, tasks)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 }

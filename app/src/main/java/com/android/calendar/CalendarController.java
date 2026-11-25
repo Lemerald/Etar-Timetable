@@ -733,7 +733,9 @@ public class CalendarController {
         final int WEEK = 3;
         final int MONTH = 4;
         final int EDIT = 5;
-        final int MAX_VALUE = 5;
+        final int TIMETABLE = 6;
+        final int TODO = 7;
+        final int MAX_VALUE = 7;
     }
 
     public interface EventHandler {

@@ -65,7 +65,37 @@ Interested in helping to translate Etar? Contribute here: https://hosted.weblate
 ##### Google Play app description:
 You can update/add your own language and all artwork files [here](metadata)
 
-### Build instructions
+### Timetable extension (work in progress)
+
+This fork adds a student-planner layer on top of Etar without changing how Etar
+syncs calendars through DAVx5:
+
+- **Timetable view** (nav drawer): a static weekly grid of regular and one-off
+  course slots, coloured by course, with assignment due-date markers. Free days
+  are marked on the grid but do not change the data-based timetable.
+- **To-dos view** (nav drawer): tasks grouped by due-date bucket, with completion
+  toggles and optional course tagging. The FAB creates a task in this view.
+- **Manage timetable**: create terms, courses, link courses to terms, define
+  weekly and one-off slots, and mark free days. Courses carry name, teacher,
+  room and colour.
+- **Generation preview**: materialises slots as events in a dedicated local
+  "Timetable" calendar (visible to DAVx5). A preview lists creates/updates/deletes
+  before anything is written. Events that were manually edited in a calendar app
+  are detected and kept instead of being overwritten.
+
+Data that does not fit into `CalendarContract` (terms, courses, slots, free days,
+tasks) is stored in a local Room database (`etar_timetable.db`) as the source of
+truth; only the generated class events go into the CalendarProvider. Assignment
+due dates are shown in the Timetable and To-dos views.
+
+### Build notes
+
+The project needs a JDK 21 toolchain and Android SDK platform 37. Gradle is set
+up to auto-download the JDK via the foojoy resolver and the SDK via AGP. A local
+`local.properties` with `sdk.dir` and `android.builder.sdkDownload=true` is used
+in this checkout (the file is gitignored).
+
+## Build instructions
 Install and extract Android SDK command line tools.
 ```
 tools/bin/sdkmanager platform-tools

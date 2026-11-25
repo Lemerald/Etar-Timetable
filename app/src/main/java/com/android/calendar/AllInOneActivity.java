@@ -83,6 +83,10 @@ import com.android.calendar.agenda.AgendaFragment;
 import com.android.calendar.alerts.AlertService;
 import com.android.calendar.month.MonthByWeekFragment;
 import com.android.calendar.selectcalendars.SelectVisibleCalendarsFragment;
+import com.android.calendar.timetable.ui.TaskDialog;
+import com.android.calendar.timetable.ui.TimetableFragment;
+import com.android.calendar.timetable.ui.TodoFragment;
+import com.android.calendar.timetable.ui.manage.TimetableEditorActivity;
 import com.android.calendar.settings.GeneralPreferences;
 import com.android.calendar.settings.SettingsActivity;
 import com.android.calendar.settings.SettingsActivityKt;
@@ -507,6 +511,8 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
                 case ViewType.AGENDA -> R.string.agenda_view;
                 case ViewType.DAY -> R.string.day_view;
                 case ViewType.MONTH -> R.string.month_view;
+                case ViewType.TIMETABLE -> R.string.timetable_view;
+                case ViewType.TODO -> R.string.todo_view;
                 default -> R.string.week_view;
             };
             mToolbar.setTitle(titleResource);
@@ -534,6 +540,14 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
         mFab.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                if (mCurrentView == ViewType.TIMETABLE) {
+                    startActivity(new Intent(AllInOneActivity.this, TimetableEditorActivity.class));
+                    return;
+                }
+                if (mCurrentView == ViewType.TODO) {
+                    TaskDialog.openFor(AllInOneActivity.this);
+                    return;
+                }
                 //Create new Event
                 Time t = new Time();
                 t.set(mController.getTime());
@@ -862,7 +876,9 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
             }
         } else if (mControlsMenu != null && mController != null
                 && (mController.getViewType() == ViewType.MONTH ||
-                mController.getViewType() == ViewType.AGENDA)) {
+                mController.getViewType() == ViewType.AGENDA ||
+                mController.getViewType() == ViewType.TIMETABLE ||
+                mController.getViewType() == ViewType.TODO)) {
             mControlsMenu.setVisible(false);
             mControlsMenu.setEnabled(false);
         } else if (mControlsMenu != null) {
@@ -1022,6 +1038,14 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
             if (mCurrentView != ViewType.AGENDA) {
                 switchToView(ViewType.AGENDA);
             }
+        } else if (itemId == R.id.timetable_menu_item) {
+            if (mCurrentView != ViewType.TIMETABLE) {
+                switchToView(ViewType.TIMETABLE);
+            }
+        } else if (itemId == R.id.todo_menu_item) {
+            if (mCurrentView != ViewType.TODO) {
+                switchToView(ViewType.TODO);
+            }
         } else if (itemId == R.id.action_settings) {
             mController.sendEvent(this, EventType.LAUNCH_SETTINGS, null, null, 0, 0);
         } else if (itemId == R.id.action_about) {
@@ -1125,6 +1149,20 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
                 }
                 if (mIsTabletConfig) {
                     mToolbar.setTitle(R.string.month_view);
+                }
+                break;
+            case ViewType.TIMETABLE:
+                mNavigationView.getMenu().findItem(R.id.timetable_menu_item).setChecked(true);
+                frag = new TimetableFragment();
+                if (mIsTabletConfig) {
+                    mToolbar.setTitle(R.string.timetable_view);
+                }
+                break;
+            case ViewType.TODO:
+                mNavigationView.getMenu().findItem(R.id.todo_menu_item).setChecked(true);
+                frag = new TodoFragment();
+                if (mIsTabletConfig) {
+                    mToolbar.setTitle(R.string.todo_view);
                 }
                 break;
             case ViewType.WEEK:
@@ -1357,7 +1395,10 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
             if (mShowCalendarControls) {
                 int animationSize = (mOrientation == Configuration.ORIENTATION_LANDSCAPE) ?
                         mControlsAnimateWidth : mControlsAnimateHeight;
-                boolean noControlsView = event.viewType == ViewType.MONTH || event.viewType == ViewType.AGENDA;
+                boolean noControlsView = event.viewType == ViewType.MONTH
+                        || event.viewType == ViewType.AGENDA
+                        || event.viewType == ViewType.TIMETABLE
+                        || event.viewType == ViewType.TODO;
                 if (mControlsMenu != null) {
                     mControlsMenu.setVisible(!noControlsView);
                     mControlsMenu.setEnabled(!noControlsView);

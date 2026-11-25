@@ -15,6 +15,9 @@ preference = "1.2.1"
 workRuntime = "2.12.0"
 androidxConcurrent = "1.3.0"
 androidxTest = "1.7.0"
+room = "2.8.5"
+ksp = "2.2.10-2.0.2"
+lifecycleViewModel = "2.11.0"
 
 [libraries]
 androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "compat" }
@@ -30,9 +33,15 @@ google-android-material = { module = "com.google.android.material:material", ver
 androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "workRuntime" }
 androidx-concurrent-futures = { module = "androidx.concurrent:concurrent-futures", version.ref = "androidxConcurrent" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTest" }
+androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
+androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
+androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+androidx-lifecycle-viewmodel-ktx = { module = "androidx.lifecycle:lifecycle-viewmodel-ktx", version.ref = "lifecycleViewModel" }
+androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycleViewModel" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 jetbrains-idea-ext = { id = "org.jetbrains.gradle.plugin.idea-ext", version.ref = "ideaExt" }
 ec4j-editorconfig = { id = "org.ec4j.editorconfig", version.ref = "editorconfig" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

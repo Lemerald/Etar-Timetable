@@ -20,6 +20,16 @@
             android:icon="@drawable/outline_view_agenda"
             android:title="@string/agenda_view" />
 
+        <item
+            android:id="@+id/timetable_menu_item"
+            android:icon="@drawable/outline_calendar_view_week"
+            android:title="@string/timetable_view" />
+
+        <item
+            android:id="@+id/todo_menu_item"
+            android:icon="@drawable/outline_view_agenda"
+            android:title="@string/todo_view" />
+
     </group>
     <group android:id="@+id/navigation_subheader" android:checkableBehavior="none">
         <item

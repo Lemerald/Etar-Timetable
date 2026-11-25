@@ -101,6 +101,14 @@ public class CalendarToolbarHandler {
                 mToolbar.setSubtitle(buildDayOfWeek());
                 mToolbar.setTitle(buildFullDate());
                 break;
+            case CalendarController.ViewType.TIMETABLE:
+                mToolbar.setSubtitle("");
+                mToolbar.setTitle(R.string.timetable_view);
+                break;
+            case CalendarController.ViewType.TODO:
+                mToolbar.setSubtitle("");
+                mToolbar.setTitle(R.string.todo_view);
+                break;
         }
     }
 
