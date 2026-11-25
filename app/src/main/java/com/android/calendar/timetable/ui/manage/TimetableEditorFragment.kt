@@ -1,6 +1,7 @@
 package com.android.calendar.timetable.ui.manage
 
 import android.app.AlertDialog
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
@@ -347,7 +348,15 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
             adapter = object : ArrayAdapter<Int>(ctx, android.R.layout.simple_spinner_item, colors) {
                 private fun colorText(position: Int, convertView: View?, parent: ViewGroup): TextView {
                     val view = super.getDropDownView(position, convertView, parent) as TextView
-                    view.text = "#%06X".format(0xFFFFFF and colors[position])
+                    val size = (24 * resources.displayMetrics.density).toInt()
+                    val dot = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(colors[position])
+                        setSize(size, size)
+                    }
+                    view.setCompoundDrawablesRelativeWithIntrinsicBounds(dot, null, null, null)
+                    view.compoundDrawablePadding = size / 2
+                    view.text = getString(R.string.timetable_color_n, position + 1)
                     return view
                 }
 

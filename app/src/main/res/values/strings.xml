@@ -910,6 +910,7 @@
     <string name="todo_due_day_before">Day before class · %1$s</string>
     <string name="todo_due_other_meeting">Another class meeting…</string>
     <string name="todo_pick_meeting">Choose class meeting</string>
+    <string name="timetable_color_n">Colour %1$d</string>
     <string name="todo_untitled">Untitled task</string>
     <string name="timetable_backup_heading">Backup &amp; export</string>
     <string name="timetable_backup_note">Class events and calendars can be exported as .ics from the calendar settings. Restoring a backup replaces all timetable data on this device.</string>
