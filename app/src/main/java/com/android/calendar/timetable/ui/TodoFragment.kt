@@ -1,6 +1,11 @@
 package com.android.calendar.timetable.ui
 
+import android.graphics.Typeface
 import android.os.Bundle
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.view.Gravity
 import android.view.View
 import android.widget.CheckBox
@@ -12,13 +17,17 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.android.calendar.CalendarController
+import com.android.calendar.timetable.data.Course
 import com.android.calendar.timetable.data.Task
+import com.android.calendar.timetable.data.TaskPriority
+import com.android.calendar.timetable.data.TodoBucket
+import com.android.calendar.timetable.data.TodoBuckets
 import com.android.calendar.timetable.data.TimetableData
 import com.android.calendar.timetable.data.TimetableRepository
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.launch
 import java.time.Instant
-import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -60,77 +69,96 @@ class TodoFragment : Fragment(R.layout.fragment_todos), CalendarController.Event
 
     private fun render(list: LinearLayout) {
         list.removeAllViews()
-        val today = LocalDate.now()
-        val endOfWeek = today.with(java.time.DayOfWeek.SUNDAY)
-        val buckets = linkedMapOf(
-            R.string.todo_bucket_today to mutableListOf<Task>(),
-            R.string.todo_bucket_tomorrow to mutableListOf(),
-            R.string.todo_bucket_this_week to mutableListOf(),
-            R.string.todo_bucket_later to mutableListOf(),
-            R.string.todo_bucket_no_date to mutableListOf(),
-        )
-        for (task in data.tasks.filter { showCompleted || !it.completed }) {
-            val bucket = when {
-                task.dueAtMillis == null -> R.string.todo_bucket_no_date
-                else -> {
-                    val date = Instant.ofEpochMilli(task.dueAtMillis!!)
-                        .atZone(ZoneId.systemDefault()).toLocalDate()
-                    when {
-                        !date.isAfter(today) -> R.string.todo_bucket_today
-                        date == today.plusDays(1) -> R.string.todo_bucket_tomorrow
-                        !date.isAfter(endOfWeek) -> R.string.todo_bucket_this_week
-                        else -> R.string.todo_bucket_later
-                    }
-                }
-            }
-            buckets[bucket]!! += task
-        }
-
-        for ((titleRes, tasks) in buckets) {
-            if (tasks.isEmpty()) continue
+        val now = LocalDateTime.now()
+        val groups = TodoBuckets.group(data.tasks, now, showCompleted)
+        for ((bucket, tasks) in groups) {
             list.addView(TextView(requireContext()).apply {
-                text = getString(titleRes)
+                text = getString(bucketTitle(bucket))
                 textSize = 16f
-                setTextColor(resources.getColor(R.color.colorPrimary, null))
+                setTextColor(if (bucket == TodoBucket.OVERDUE) OVERDUE_COLOR
+                    else resources.getColor(R.color.colorPrimary, null))
                 setPadding(0, dp(12), 0, dp(4))
             })
-            for (task in tasks.sortedWith(
-                compareBy<Task> { it.completed }.thenBy { it.dueAtMillis ?: Long.MAX_VALUE }
-            )) {
-                list.addView(taskRow(task))
-            }
+            val nowMillis = System.currentTimeMillis()
+            for (task in tasks) list.addView(taskRow(task, TodoBuckets.isDone(task, nowMillis)))
         }
     }
 
-    private fun taskRow(task: Task): View {
+    private fun bucketTitle(bucket: TodoBucket) = when (bucket) {
+        TodoBucket.OVERDUE -> R.string.todo_bucket_overdue
+        TodoBucket.TODAY -> R.string.todo_bucket_today
+        TodoBucket.TOMORROW -> R.string.todo_bucket_tomorrow
+        TodoBucket.THIS_WEEK -> R.string.todo_bucket_this_week
+        TodoBucket.LATER -> R.string.todo_bucket_later
+        TodoBucket.NO_DATE -> R.string.todo_bucket_no_date
+    }
+
+    /** Title line with priority, course and exam tags; second line with due time and checklist progress. */
+    private fun label(task: Task): CharSequence {
+        val course = task.courseId?.let { data.courseById(it) }
+        val text = SpannableStringBuilder()
+        if (task.priority != TaskPriority.NONE) {
+            text.append("!".repeat(task.priority) + " ",
+                ForegroundColorSpan(PRIORITY_COLORS[task.priority]), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        text.append(task.title, StyleSpan(Typeface.BOLD), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (task.isExam) {
+            text.append("  ").append(getString(R.string.todo_exam_tag),
+                ForegroundColorSpan(OVERDUE_COLOR), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        val details = buildList {
+            if (course != null) add(course)
+            task.dueAtMillis?.let { add(formatDue(task, it)) }
+            val checklist = data.checklistFor(task.id)
+            if (checklist.isNotEmpty()) add("☑ ${checklist.count { it.done }}/${checklist.size}")
+            if (task.repeatRule != null) add("↻")
+        }
+        if (details.isNotEmpty()) text.append('\n')
+        details.forEachIndexed { index, detail ->
+            if (index > 0) text.append("  ·  ")
+            if (detail is Course) {
+                text.append("● ", ForegroundColorSpan(detail.color), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                text.append(detail.name)
+            } else {
+                text.append(detail.toString())
+            }
+        }
+        return text
+    }
+
+    private fun formatDue(task: Task, due: Long): String {
+        val start = Instant.ofEpochMilli(due).atZone(ZoneId.systemDefault())
+        val base = start.toLocalDate().format(DATE_FORMAT) + " " + start.toLocalTime().format(TIME_FORMAT)
+        val end = task.endAtMillis?.takeIf { task.isExam }
+            ?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalTime() }
+        return if (end != null) base + "–" + end.format(TIME_FORMAT) else base
+    }
+
+    private fun taskRow(task: Task, done: Boolean): View {
+        val column = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
         val row = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val course = task.courseId?.let { data.courseById(it) }
-        val label = buildString {
-            append(task.title)
-            if (course != null) append("  [").append(course.name).append(']')
-            task.dueAtMillis?.let {
-                val dateTime = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())
-                append('\n').append(dateTime.toLocalDate().format(DATE_FORMAT))
-                    .append(' ').append(dateTime.toLocalTime().format(TIME_FORMAT))
-            }
-        }
-        row.addView(CheckBox(requireContext()).apply {
-            text = label
-            isChecked = task.completed
-            layoutParams = LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            setOnCheckedChangeListener { _, checked ->
-                launch {
-                    repository.updateTaskSynced(task.copy(
-                        completed = checked,
-                        completedAtMillis = if (checked) System.currentTimeMillis() else null,
-                    ))
+        val weight = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        if (task.isExam) {
+            // Exams are appointments: they are done once over, not checked off.
+            row.addView(TextView(requireContext()).apply {
+                text = label(task)
+                layoutParams = weight
+                setPadding(dp(8), dp(4), 0, dp(4))
+                alpha = if (done) 0.5f else 1f
+            })
+        } else {
+            row.addView(CheckBox(requireContext()).apply {
+                text = label(task)
+                isChecked = task.completed
+                layoutParams = weight
+                setOnCheckedChangeListener { _, checked ->
+                    launch { repository.setTaskCompleted(task, checked) }
                 }
-            }
-        })
+            })
+        }
         row.addView(ImageButton(requireContext()).apply {
             setImageResource(R.drawable.outline_edit_event)
             contentDescription = getString(R.string.todo_edit_task)
@@ -152,7 +180,22 @@ class TodoFragment : Fragment(R.layout.fragment_todos), CalendarController.Event
                     .show()
             }
         })
-        return row
+        column.addView(row)
+        if (!done) {
+            for (item in data.checklistFor(task.id)) {
+                column.addView(CheckBox(requireContext()).apply {
+                    text = item.text
+                    isChecked = item.done
+                    textSize = 13f
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(40) }
+                    setOnCheckedChangeListener { _, checked ->
+                        launch { repository.setChecklistItemDone(item, checked) }
+                    }
+                })
+            }
+        }
+        return column
     }
 
     private fun launch(block: suspend () -> Unit) {
@@ -164,5 +207,8 @@ class TodoFragment : Fragment(R.layout.fragment_todos), CalendarController.Event
     private companion object {
         val DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("d/M/u", Locale.getDefault())
         val TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
+        const val OVERDUE_COLOR = 0xFFD1270C.toInt()
+        /** Indexed by priority: none, low, medium, high. */
+        val PRIORITY_COLORS = intArrayOf(0, 0xFF1454B9.toInt(), 0xFFE69500.toInt(), 0xFFD1270C.toInt())
     }
 }

@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import ws.xsoh.etar.R
@@ -179,7 +180,33 @@ class TimetableRepository private constructor(private val app: Application) {
     }
 
     suspend fun updateTaskSynced(task: Task) = withContext(Dispatchers.IO) {
-        dao.updateTask(task.copy(calendarEventId = syncTaskEvent(task)))
+        val changed = task.copy(modifiedAtMillis = System.currentTimeMillis())
+        dao.updateTask(changed.copy(calendarEventId = syncTaskEvent(changed)))
+    }
+
+    /**
+     * Checks a task off (or back on). Completing a repeating task creates its next
+     * occurrence (with a fresh copy of the checklist); the completed one stops repeating.
+     */
+    suspend fun setTaskCompleted(task: Task, completed: Boolean) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val rule = RepeatRule.parse(task.repeatRule)
+        val due = task.dueAtMillis
+        if (completed && rule != null && due != null) {
+            val zone = ZoneId.systemDefault()
+            rule.next(Instant.ofEpochMilli(due).atZone(zone).toLocalDateTime())?.let { next ->
+                val nextMillis = next.atZone(zone).toInstant().toEpochMilli()
+                val newId = addTaskSynced(task.copy(
+                    id = 0, dueAtMillis = nextMillis, endAtMillis = task.endAtMillis?.plus(nextMillis - due),
+                    completed = false, completedAtMillis = null, createdAtMillis = now, modifiedAtMillis = now,
+                    calendarEventId = null, remoteId = null, remoteModifiedAtMillis = null,
+                ))
+                setChecklist(newId, dao.checklist(task.id).map { it.copy(done = false) })
+            }
+            updateTaskSynced(task.copy(completed = true, completedAtMillis = now, repeatRule = null))
+        } else {
+            updateTaskSynced(task.copy(completed = completed, completedAtMillis = if (completed) now else null))
+        }
     }
 
     suspend fun deleteTaskSynced(task: Task) = withContext(Dispatchers.IO) {
@@ -199,17 +226,20 @@ class TimetableRepository private constructor(private val app: Application) {
             } ?: false
         }
         val due = task.dueAtMillis
-        if (task.completed || due == null) {
+        // Exams are appointments and keep their event; tasks lose it once done.
+        if ((task.completed && !task.isExam) || due == null) {
             existingId?.let { resolver.delete(eventUri(it), null, null) }
             return null
         }
         val color = task.courseId?.let { cid -> dao.courses().firstOrNull { it.id == cid }?.color }
         val values = ContentValues().apply {
             put(Events.CALENDAR_ID, ensureTimetableCalendar())
-            put(Events.TITLE, app.getString(R.string.timetable_task_event_prefix, task.title))
+            val prefix = if (task.isExam) R.string.timetable_exam_event_prefix else R.string.timetable_task_event_prefix
+            put(Events.TITLE, app.getString(prefix, task.title))
             put(Events.DESCRIPTION, task.note)
             put(Events.DTSTART, due)
-            put(Events.DTEND, due + TASK_EVENT_DURATION_MS)
+            put(Events.DTEND, if (task.isExam) (task.endAtMillis?.takeIf { it > due } ?: (due + EXAM_DEFAULT_DURATION_MS))
+                else due + TASK_EVENT_DURATION_MS)
             put(Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
             put(Events.ALL_DAY, 0)
             put(Events.HAS_ALARM, 0)
@@ -614,6 +644,7 @@ class TimetableRepository private constructor(private val app: Application) {
         private const val MARKER = "com.android.calendar.timetable.generated"
         private const val TASK_MARKER = "com.android.calendar.timetable.task"
         private const val TASK_EVENT_DURATION_MS = 15 * 60 * 1000L
+        private const val EXAM_DEFAULT_DURATION_MS = 90 * 60 * 1000L
         private const val CALENDAR_ACCOUNT = "etar_timetable"
         private const val CALENDAR_NAME = "etar_timetable"
         private const val PREFS_NAME = "etar_timetable_prefs"

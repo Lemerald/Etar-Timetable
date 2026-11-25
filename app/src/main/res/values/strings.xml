@@ -911,6 +911,27 @@
     <string name="todo_due_other_meeting">Another class meeting…</string>
     <string name="todo_pick_meeting">Choose class meeting</string>
     <string name="timetable_color_n">Colour %1$d</string>
+    <string name="todo_kind_task">Task</string>
+    <string name="todo_kind_exam">Exam</string>
+    <string name="todo_exam_date">Date</string>
+    <string name="todo_exam_start">Start</string>
+    <string name="todo_exam_end">End</string>
+    <string name="todo_exam_end_before_start">The exam must end after it starts</string>
+    <string name="todo_exam_during_class">During class · %1$s</string>
+    <string name="todo_priority_none">No priority</string>
+    <string name="todo_priority_low">Low priority</string>
+    <string name="todo_priority_medium">Medium priority</string>
+    <string name="todo_priority_high">High priority</string>
+    <string name="todo_repeat_none">Does not repeat</string>
+    <string name="todo_repeat_daily">Repeats every day</string>
+    <string name="todo_repeat_weekly">Repeats every week</string>
+    <string name="todo_repeat_biweekly">Repeats every 2 weeks</string>
+    <string name="todo_repeat_monthly">Repeats every month</string>
+    <string name="todo_repeat_custom">Repeats (%1$s)</string>
+    <string name="todo_checklist">Checklist</string>
+    <string name="todo_checklist_add">Add checklist item</string>
+    <string name="todo_checklist_item_hint">Item</string>
+    <string name="todo_checklist_remove">Remove item</string>
     <string name="todo_untitled">Untitled task</string>
     <string name="timetable_backup_heading">Backup &amp; export</string>
     <string name="timetable_backup_note">Class events and calendars can be exported as .ics from the calendar settings. Restoring a backup replaces all timetable data on this device.</string>
@@ -927,6 +948,7 @@
         <item quantity="one">Imported %d task</item>
         <item quantity="other">Imported %d tasks</item>
     </plurals>
+    <string name="timetable_exam_event_prefix">Exam: %1$s</string>
     <string name="timetable_task_event_prefix">Task: %1$s</string>
     <string name="timetable_editor">Manage timetable</string>
     <string name="timetable_unnamed_course">Untitled course</string>
@@ -1002,6 +1024,8 @@
     <string name="todo_no_course">No course</string>
     <string name="todo_due_date">Due date</string>
     <string name="todo_show_completed">Show completed</string>
+    <string name="todo_bucket_overdue">Overdue</string>
+    <string name="todo_exam_tag">EXAM</string>
     <string name="todo_bucket_today">Today</string>
     <string name="todo_bucket_tomorrow">Tomorrow</string>
     <string name="todo_bucket_this_week">End of week</string>

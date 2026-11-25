@@ -177,6 +177,9 @@ interface TimetableDao {
     @Query("SELECT * FROM checklist_items")
     suspend fun allChecklistItems(): List<ChecklistItem>
 
+    @Query("SELECT * FROM checklist_items WHERE taskId = :taskId ORDER BY position")
+    suspend fun checklist(taskId: Long): List<ChecklistItem>
+
     @Query("DELETE FROM checklist_items WHERE taskId = :taskId")
     suspend fun deleteChecklist(taskId: Long)
 
