@@ -70,6 +70,7 @@ class TimetableFragment : Fragment(R.layout.fragment_timetable), CalendarControl
             TaskDialog.show(
                 activity = requireActivity(),
                 repository = repository,
+                data = data,
                 courses = data.coursesForTerm(activeTermId),
             )
         }

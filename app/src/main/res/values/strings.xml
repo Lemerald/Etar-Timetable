@@ -903,6 +903,13 @@
     <!-- Timetable / student planner extension -->
     <string name="timetable_view">Timetable</string>
     <string name="timetable_calendar_name">Timetable</string>
+    <string name="todo_due_preset_custom">Custom due date/time</string>
+    <string name="todo_due_before_class">Before class · %1$s</string>
+    <string name="todo_due_start_of_class">Start of class · %1$s</string>
+    <string name="todo_due_end_of_class">End of class · %1$s</string>
+    <string name="todo_due_day_before">Day before class · %1$s</string>
+    <string name="todo_due_other_meeting">Another class meeting…</string>
+    <string name="todo_pick_meeting">Choose class meeting</string>
     <string name="todo_untitled">Untitled task</string>
     <string name="timetable_backup_heading">Backup &amp; export</string>
     <string name="timetable_backup_note">Class events and calendars can be exported as .ics from the calendar settings. Restoring a backup replaces all timetable data on this device.</string>

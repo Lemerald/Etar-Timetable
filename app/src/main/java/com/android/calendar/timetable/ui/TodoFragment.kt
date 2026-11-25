@@ -35,7 +35,7 @@ class TodoFragment : Fragment(R.layout.fragment_todos), CalendarController.Event
         super.onViewCreated(view, savedInstanceState)
         val list = view.findViewById<LinearLayout>(R.id.todo_list)
         view.findViewById<View>(R.id.todo_new_task).setOnClickListener {
-            TaskDialog.show(requireActivity(), repository, data.courses)
+            TaskDialog.show(requireActivity(), repository, data)
         }
         val toggle = view.findViewById<CheckBox>(R.id.todo_show_completed)
         toggle.isChecked = showCompleted
@@ -135,7 +135,7 @@ class TodoFragment : Fragment(R.layout.fragment_todos), CalendarController.Event
             setImageResource(R.drawable.outline_edit_event)
             contentDescription = getString(R.string.todo_edit_task)
             setOnClickListener {
-                TaskDialog.show(requireActivity(), repository, data.courses, existing = task)
+                TaskDialog.show(requireActivity(), repository, data, existing = task)
             }
         })
         row.addView(ImageButton(requireContext()).apply {
