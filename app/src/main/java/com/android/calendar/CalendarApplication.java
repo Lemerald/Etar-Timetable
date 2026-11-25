@@ -29,6 +29,8 @@ public class CalendarApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        // Timetable extension: keep the "due tomorrow" summary alarm scheduled.
+        com.android.calendar.timetable.reminders.DueSummary.schedule(this);
         mCurrentNightMode = getResources().getConfiguration().uiMode
                 & Configuration.UI_MODE_NIGHT_MASK;
 

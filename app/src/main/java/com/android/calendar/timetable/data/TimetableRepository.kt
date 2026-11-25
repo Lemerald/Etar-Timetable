@@ -16,6 +16,8 @@ import android.provider.CalendarContract.Reminders
 import androidx.room.withTransaction
 import com.android.calendar.persistence.CalendarRepository
 import com.android.calendar.timetable.io.TaskIcs
+import com.android.calendar.timetable.reminders.DueSummary
+import com.android.calendar.timetable.reminders.ReminderSettings
 import com.android.calendar.timetable.io.TimetableBackup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -178,12 +180,14 @@ class TimetableRepository private constructor(private val app: Application) {
         val saved = task.copy(id = id)
         val eventId = syncTaskEvent(saved)
         if (eventId != saved.calendarEventId) dao.updateTask(saved.copy(calendarEventId = eventId))
+        DueSummary.schedule(app)
         id
     }
 
     suspend fun updateTaskSynced(task: Task) = withContext(Dispatchers.IO) {
         val changed = task.copy(modifiedAtMillis = System.currentTimeMillis())
         dao.updateTask(changed.copy(calendarEventId = syncTaskEvent(changed)))
+        DueSummary.schedule(app)
     }
 
     /**
@@ -214,6 +218,7 @@ class TimetableRepository private constructor(private val app: Application) {
     suspend fun deleteTaskSynced(task: Task) = withContext(Dispatchers.IO) {
         task.calendarEventId?.let { app.contentResolver.delete(eventUri(it), null, null) }
         dao.deleteTask(task)
+        DueSummary.schedule(app)
     }
 
     /**
@@ -249,12 +254,15 @@ class TimetableRepository private constructor(private val app: Application) {
             put(Events.STATUS, Events.STATUS_CONFIRMED)
             put(Events.AVAILABILITY, Events.AVAILABILITY_BUSY)
         }
+        val reminder = if (task.isExam) ReminderSettings.examMinutes(app) else ReminderSettings.taskMinutes(app)
         if (existingId != null) {
             resolver.update(eventUri(existingId), values, null, null)
+            setEventReminder(existingId, reminder)
             return existingId
         }
         val uri = resolver.insert(Events.CONTENT_URI, values) ?: return null
         val eventId = ContentUris.parseId(uri)
+        setEventReminder(eventId, reminder)
         resolver.insert(extendedPropertiesUri(), ContentValues().apply {
             put(ExtendedProperties.EVENT_ID, eventId)
             put(ExtendedProperties.NAME, TASK_MARKER)
@@ -478,7 +486,44 @@ class TimetableRepository private constructor(private val app: Application) {
         for (generated in preview.userEditedKept) {
             dao.insertGeneratedEvent(generated.copy(userEdited = true))
         }
+        applyClassReminders(dao.generatedEvents(preview.termId))
+        DueSummary.schedule(app)
         Unit
+    }
+
+    /**
+     * Re-applies the reminder settings to all class, task and exam events
+     * (called when the settings change). Events the user edited are left alone.
+     */
+    suspend fun applyReminderSettings() = withContext(Dispatchers.IO) {
+        applyClassReminders(dao.allGeneratedEvents())
+        for (task in dao.allTasks()) {
+            val eventId = task.calendarEventId ?: continue
+            setEventReminder(eventId,
+                if (task.isExam) ReminderSettings.examMinutes(app) else ReminderSettings.taskMinutes(app))
+        }
+        DueSummary.schedule(app)
+    }
+
+    private fun applyClassReminders(events: List<GeneratedEvent>) {
+        val minutes = ReminderSettings.classMinutes(app)
+        events.filter { !it.userEdited }.forEach { setEventReminder(it.eventId, minutes) }
+    }
+
+    /** Replaces an event's reminders with one alert [minutes] before (none for [ReminderSettings.OFF]). */
+    private fun setEventReminder(eventId: Long, minutes: Int) {
+        val resolver = app.contentResolver
+        resolver.delete(Reminders.CONTENT_URI, "${Reminders.EVENT_ID}=?", arrayOf(eventId.toString()))
+        if (minutes != ReminderSettings.OFF) {
+            resolver.insert(Reminders.CONTENT_URI, ContentValues().apply {
+                put(Reminders.EVENT_ID, eventId)
+                put(Reminders.MINUTES, minutes)
+                put(Reminders.METHOD, Reminders.METHOD_ALERT)
+            })
+        }
+        resolver.update(eventUri(eventId), ContentValues().apply {
+            put(Events.HAS_ALARM, if (minutes != ReminderSettings.OFF) 1 else 0)
+        }, null, null)
     }
 
     // ---- Helpers ----------------------------------------------------------

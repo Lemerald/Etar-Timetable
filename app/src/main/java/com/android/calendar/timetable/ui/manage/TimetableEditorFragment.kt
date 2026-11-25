@@ -34,6 +34,7 @@ import com.android.calendar.timetable.data.TimetableData
 import com.android.calendar.timetable.data.TimetableRepository
 import com.android.calendar.timetable.data.minutesToTime
 import com.android.calendar.timetable.io.TimetableBackup
+import com.android.calendar.timetable.reminders.ReminderSettings
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.timepicker.MaterialTimePicker
@@ -83,7 +84,8 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         addButton(getString(R.string.timetable_new_term)) { showTermDialog(null) }
         if (data.terms.isEmpty()) {
             addNote(getString(R.string.timetable_no_terms))
-            renderBackupSection()
+            renderReminderSection()
+        renderBackupSection()
             return
         }
         val term = data.terms.first { it.id == activeTermId }
@@ -217,6 +219,7 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
                 if (isAdded) showPreview(preview)
             }
         }
+        renderReminderSection()
         renderBackupSection()
     }
 
@@ -235,6 +238,65 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) readBackup(uri)
         }
+
+    private fun renderReminderSection() {
+        val ctx = requireContext()
+        addHeading(getString(R.string.timetable_reminders_heading))
+        val classSpinner = reminderSpinner(R.string.timetable_reminder_class,
+            ReminderSettings.CLASS_CHOICES, ReminderSettings.classMinutes(ctx))
+        val taskSpinner = reminderSpinner(R.string.timetable_reminder_task,
+            ReminderSettings.TASK_CHOICES, ReminderSettings.taskMinutes(ctx))
+        val examSpinner = reminderSpinner(R.string.timetable_reminder_exam,
+            ReminderSettings.EXAM_CHOICES, ReminderSettings.examMinutes(ctx))
+        val summary = CheckBox(ctx).apply {
+            text = getString(R.string.timetable_reminder_summary)
+            isChecked = ReminderSettings.dueSummary(ctx)
+        }
+        container.addView(summary)
+        fun save() {
+            val values = listOf(
+                ReminderSettings.CLASS_CHOICES[classSpinner.selectedItemPosition],
+                ReminderSettings.TASK_CHOICES[taskSpinner.selectedItemPosition],
+                ReminderSettings.EXAM_CHOICES[examSpinner.selectedItemPosition],
+            )
+            val unchanged = values == listOf(ReminderSettings.classMinutes(ctx), ReminderSettings.taskMinutes(ctx),
+                ReminderSettings.examMinutes(ctx)) && summary.isChecked == ReminderSettings.dueSummary(ctx)
+            if (unchanged) return
+            ReminderSettings.set(ctx, values[0], values[1], values[2], summary.isChecked)
+            launch { repository.applyReminderSettings() }
+        }
+        listOf(classSpinner, taskSpinner, examSpinner).forEach {
+            it.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) = save()
+                override fun onNothingSelected(parent: AdapterView<*>) = Unit
+            }
+        }
+        summary.setOnCheckedChangeListener { _, _ -> save() }
+    }
+
+    /** A labelled spinner of reminder offsets; [current] is preselected. */
+    private fun reminderSpinner(label: Int, choices: List<Int>, current: Int): Spinner {
+        addNote(getString(label))
+        val spinner = Spinner(requireContext()).apply {
+            adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item,
+                choices.map(::reminderLabel)).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            setSelection(choices.indexOf(current).coerceAtLeast(0), false)
+        }
+        container.addView(spinner)
+        return spinner
+    }
+
+    private fun reminderLabel(minutes: Int): String = when {
+        minutes == ReminderSettings.OFF -> getString(R.string.timetable_reminder_off)
+        minutes == 60 -> getString(R.string.timetable_reminder_one_hour)
+        minutes == 1440 -> getString(R.string.timetable_reminder_one_day)
+        minutes == 10080 -> getString(R.string.timetable_reminder_one_week)
+        minutes % 1440 == 0 -> getString(R.string.timetable_reminder_days, minutes / 1440)
+        minutes % 60 == 0 -> getString(R.string.timetable_reminder_hours, minutes / 60)
+        else -> getString(R.string.timetable_reminder_minutes, minutes)
+    }
 
     private fun renderBackupSection() {
         addHeading(getString(R.string.timetable_backup_heading))

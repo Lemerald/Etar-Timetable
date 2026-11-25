@@ -95,4 +95,22 @@ object ClassMeetings {
         }
         return result.filter { it.start.isAfter(after) }.take(limit)
     }
+
+    /** All meetings (any course) on [date], sorted by start. */
+    fun onDate(data: TimetableData, date: LocalDate): List<ClassMeeting> {
+        val epochDay = date.toEpochDay()
+        val termsById = data.terms.associateBy { it.id }
+        val freeDays = data.freeDays.filter { it.dateEpochDay == epochDay }.map { it.termId }.toSet()
+        fun isClassDay(termId: Long): Boolean {
+            val term = termsById[termId] ?: return false
+            return epochDay in term.startEpochDay..term.endEpochDay && termId !in freeDays
+        }
+        val weekly = data.regularSlots.filter {
+            it.weekday == date.dayOfWeek.value && isClassDay(it.termId) &&
+                data.courseById(it.courseId)?.isActiveOn(epochDay) != false
+        }.map { ClassMeeting(it.courseId, date, it.startMinute, it.endMinute) }
+        val oneOff = data.oneTimeSlots.filter { it.dateEpochDay == epochDay && isClassDay(it.termId) }
+            .map { ClassMeeting(it.courseId, date, it.startMinute, it.endMinute) }
+        return (weekly + oneOff).distinct().sortedBy { it.start }
+    }
 }

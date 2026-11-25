@@ -936,6 +936,23 @@
     <string name="timetable_course_first_day">First day: %1$s</string>
     <string name="timetable_course_last_day">Last day: %1$s</string>
     <string name="timetable_end_before_start">The end date must not be before the start date</string>
+    <string name="timetable_due_summary_channel">Due tomorrow</string>
+    <plurals name="timetable_due_summary_title">
+        <item quantity="one">%d item due tomorrow</item>
+        <item quantity="other">%d items due tomorrow</item>
+    </plurals>
+    <string name="timetable_reminders_heading">Reminders</string>
+    <string name="timetable_reminder_class">Before each class</string>
+    <string name="timetable_reminder_task">Before task deadlines</string>
+    <string name="timetable_reminder_exam">Before exams</string>
+    <string name="timetable_reminder_summary">Summary of tomorrow\'s tasks after your last class (15:00 without classes)</string>
+    <string name="timetable_reminder_off">No reminder</string>
+    <string name="timetable_reminder_minutes">%1$d minutes before</string>
+    <string name="timetable_reminder_hours">%1$d hours before</string>
+    <string name="timetable_reminder_days">%1$d days before</string>
+    <string name="timetable_reminder_one_hour">1 hour before</string>
+    <string name="timetable_reminder_one_day">1 day before</string>
+    <string name="timetable_reminder_one_week">1 week before</string>
     <string name="todo_untitled">Untitled task</string>
     <string name="timetable_backup_heading">Backup &amp; export</string>
     <string name="timetable_backup_note">Class events and calendars can be exported as .ics from the calendar settings. Restoring a backup replaces all timetable data on this device.</string>
