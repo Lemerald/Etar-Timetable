@@ -8,12 +8,15 @@
  */
 package com.android.calendar.timetable.io
 
+import com.android.calendar.timetable.data.ChecklistItem
 import com.android.calendar.timetable.data.Course
 import com.android.calendar.timetable.data.CourseTerm
 import com.android.calendar.timetable.data.FreeDay
 import com.android.calendar.timetable.data.OneTimeSlot
 import com.android.calendar.timetable.data.RegularSlot
 import com.android.calendar.timetable.data.Task
+import com.android.calendar.timetable.data.TaskKind
+import com.android.calendar.timetable.data.TaskPriority
 import com.android.calendar.timetable.data.Term
 import com.android.calendar.timetable.data.TimetableData
 import org.json.JSONArray
@@ -28,7 +31,8 @@ import org.json.JSONObject
 object TimetableBackup {
 
     const val FORMAT = "etar-timetable-backup"
-    const val VERSION = 1
+    /** 1: initial. 2: course date range, task kind/end/priority/repeat, checklists. */
+    const val VERSION = 2
 
     class InvalidBackupException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
@@ -44,6 +48,7 @@ object TimetableBackup {
             put("courses", JSONArray(data.courses.map {
                 JSONObject().put("id", it.id).put("name", it.name).put("teacher", it.teacher)
                     .put("room", it.room).put("color", it.color)
+                    .putOpt("startEpochDay", it.startEpochDay).putOpt("endEpochDay", it.endEpochDay)
             }))
             put("courseTerms", JSONArray(data.courseTerms.map {
                 JSONObject().put("courseId", it.courseId).put("termId", it.termId)
@@ -65,6 +70,12 @@ object TimetableBackup {
                     .putOpt("courseId", it.courseId).putOpt("dueAtMillis", it.dueAtMillis)
                     .put("completed", it.completed).putOpt("completedAtMillis", it.completedAtMillis)
                     .put("createdAtMillis", it.createdAtMillis)
+                    .put("kind", it.kind).putOpt("endAtMillis", it.endAtMillis).put("priority", it.priority)
+                    .putOpt("repeatRule", it.repeatRule).put("modifiedAtMillis", it.modifiedAtMillis)
+            }))
+            put("checklistItems", JSONArray(data.checklistItems.map {
+                JSONObject().put("id", it.id).put("taskId", it.taskId).put("text", it.text)
+                    .put("done", it.done).put("position", it.position)
             }))
         }.toString(2)
 
@@ -86,7 +97,8 @@ object TimetableBackup {
                 },
                 courses = root.objects("courses").map {
                     Course(it.getLong("id"), it.getString("name"), it.optString("teacher"),
-                        it.optString("room"), it.getInt("color"))
+                        it.optString("room"), it.getInt("color"),
+                        it.optLongOrNull("startEpochDay"), it.optLongOrNull("endEpochDay"))
                 },
                 courseTerms = root.objects("courseTerms").map {
                     CourseTerm(it.getLong("courseId"), it.getLong("termId"))
@@ -112,7 +124,16 @@ object TimetableBackup {
                         completed = it.optBoolean("completed"),
                         completedAtMillis = it.optLongOrNull("completedAtMillis"),
                         createdAtMillis = it.optLong("createdAtMillis", System.currentTimeMillis()),
+                        kind = it.optInt("kind", TaskKind.TASK),
+                        endAtMillis = it.optLongOrNull("endAtMillis"),
+                        priority = it.optInt("priority", TaskPriority.NONE),
+                        repeatRule = if (it.isNull("repeatRule")) null else it.getString("repeatRule"),
+                        modifiedAtMillis = it.optLong("modifiedAtMillis", 0),
                     )
+                },
+                checklistItems = root.objects("checklistItems").map {
+                    ChecklistItem(it.getLong("id"), it.getLong("taskId"), it.getString("text"),
+                        it.optBoolean("done"), it.optInt("position"))
                 },
             )
         } catch (e: JSONException) {
@@ -131,6 +152,8 @@ object TimetableBackup {
         data.oneTimeSlots.forEach { check(it.courseId in courseIds && it.termId in termIds, "course or term") }
         data.freeDays.forEach { check(it.termId in termIds, "term") }
         data.tasks.forEach { task -> task.courseId?.let { check(it in courseIds, "course") } }
+        val taskIds = data.tasks.map { it.id }.toSet()
+        data.checklistItems.forEach { check(it.taskId in taskIds, "task") }
     }
 
     private fun JSONObject.objects(key: String): List<JSONObject> {

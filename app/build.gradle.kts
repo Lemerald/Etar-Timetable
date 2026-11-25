@@ -17,6 +17,9 @@ ksp {
 }
 
 android {
+	// Room schema history, used by migration tests
+	sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
+
 	namespace = "ws.xsoh.etar"
 	testNamespace = "com.android.calendar.tests"
 	compileSdk = 37
@@ -134,6 +137,11 @@ dependencies {
 	testImplementation(libs.androidx.test.runner)
 	// Real org.json for JVM unit tests (android.jar only ships stubs)
 	testImplementation(libs.json)
+	androidTestImplementation(libs.androidx.test.runner)
+	androidTestImplementation(libs.androidx.test.ext.junit)
+	androidTestImplementation(libs.androidx.room.testing)
+	// room-testing needs serialization >= 1.8; align the app runtime with it
+	implementation(platform(libs.kotlinx.serialization.bom))
 
 	coreLibraryDesugaring(libs.android.tools.desugar)
 

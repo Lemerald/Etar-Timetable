@@ -1,6 +1,7 @@
 package com.android.calendar.timetable.data
 
 import android.content.Context
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -15,8 +16,10 @@ import androidx.room.RoomDatabase
         FreeDay::class,
         Task::class,
         GeneratedEvent::class,
+        ChecklistItem::class,
     ],
-    version = 2,
+    version = 3,
+    autoMigrations = [AutoMigration(from = 2, to = 3)],
     exportSchema = true,
 )
 /*

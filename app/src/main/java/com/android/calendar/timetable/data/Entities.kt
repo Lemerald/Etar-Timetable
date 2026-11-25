@@ -8,6 +8,7 @@
  */
 package com.android.calendar.timetable.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -38,7 +39,13 @@ data class Course(
     val teacher: String = "",
     val room: String = "",
     val color: Int = 0xFF1454B9.toInt(),
-)
+    /** Optional first/last day the course meets (e.g. a block course inside a term). */
+    val startEpochDay: Long? = null,
+    val endEpochDay: Long? = null,
+) {
+    fun isActiveOn(epochDay: Long): Boolean =
+        (startEpochDay == null || epochDay >= startEpochDay) && (endEpochDay == null || epochDay <= endEpochDay)
+}
 
 /** Cross reference: which courses are active in which term. */
 @Entity(
@@ -121,6 +128,47 @@ data class Task(
     val createdAtMillis: Long = System.currentTimeMillis(),
     /** Event in the managed calendar that mirrors the due date, if any. */
     val calendarEventId: Long? = null,
+    /** [TaskKind]: a task with a deadline, or an exam (a timed appointment). */
+    @ColumnInfo(defaultValue = "0") val kind: Int = TaskKind.TASK,
+    /** Exams: end of the exam; [dueAtMillis] is its start. */
+    val endAtMillis: Long? = null,
+    /** [TaskPriority]: 0 = none, 1 = low, 2 = medium, 3 = high. */
+    @ColumnInfo(defaultValue = "0") val priority: Int = TaskPriority.NONE,
+    /** Simplified RRULE (see [RepeatRule]); completing the task creates the next occurrence. */
+    val repeatRule: String? = null,
+    @ColumnInfo(defaultValue = "0") val modifiedAtMillis: Long = System.currentTimeMillis(),
+    /** Row id of the mirrored task in an OpenTasks provider (DAVx5 bridge). */
+    val remoteId: Long? = null,
+    /** Provider LAST_MODIFIED of [remoteId] at the last sync. */
+    val remoteModifiedAtMillis: Long? = null,
+) {
+    val isExam: Boolean get() = kind == TaskKind.EXAM
+}
+
+object TaskKind {
+    const val TASK = 0
+    const val EXAM = 1
+}
+
+object TaskPriority {
+    const val NONE = 0
+    const val LOW = 1
+    const val MEDIUM = 2
+    const val HIGH = 3
+}
+
+/** A checklist entry (sub-step) of a task. */
+@Entity(
+    tableName = "checklist_items",
+    indices = [Index("taskId")],
+    foreignKeys = [ForeignKey(Task::class, ["id"], ["taskId"], onDelete = ForeignKey.CASCADE)],
+)
+data class ChecklistItem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val taskId: Long,
+    val text: String,
+    val done: Boolean = false,
+    val position: Int = 0,
 )
 
 /**
@@ -153,7 +201,11 @@ data class TimetableData(
     val oneTimeSlots: List<OneTimeSlot> = emptyList(),
     val freeDays: List<FreeDay> = emptyList(),
     val tasks: List<Task> = emptyList(),
+    val checklistItems: List<ChecklistItem> = emptyList(),
 ) {
+    fun checklistFor(taskId: Long): List<ChecklistItem> =
+        checklistItems.filter { it.taskId == taskId }.sortedBy { it.position }
+
     fun coursesForTerm(termId: Long): List<Course> {
         val ids = courseTerms.filter { it.termId == termId }.map { it.courseId }.toSet()
         return courses.filter { it.id in ids }

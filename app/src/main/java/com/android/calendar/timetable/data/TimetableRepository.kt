@@ -78,6 +78,7 @@ class TimetableRepository private constructor(private val app: Application) {
             dao.observeOneTimeSlots(),
             dao.observeFreeDays(),
             dao.observeTasks(),
+            dao.observeChecklistItems(),
         )
     ) { values ->
         @Suppress("UNCHECKED_CAST")
@@ -89,6 +90,7 @@ class TimetableRepository private constructor(private val app: Application) {
             oneTimeSlots = values[4] as List<OneTimeSlot>,
             freeDays = values[5] as List<FreeDay>,
             tasks = values[6] as List<Task>,
+            checklistItems = values[7] as List<ChecklistItem>,
         )
     }
 
@@ -153,6 +155,19 @@ class TimetableRepository private constructor(private val app: Application) {
     suspend fun updateTask(task: Task) = dao.updateTask(task)
 
     suspend fun deleteTask(task: Task) = dao.deleteTask(task)
+
+    /** Replaces a task's checklist with [items] (in order). */
+    suspend fun setChecklist(taskId: Long, items: List<ChecklistItem>) = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            dao.deleteChecklist(taskId)
+            dao.insertChecklistItems(items.mapIndexed { index, item ->
+                item.copy(id = 0, taskId = taskId, position = index)
+            })
+        }
+    }
+
+    suspend fun setChecklistItemDone(item: ChecklistItem, done: Boolean) =
+        dao.updateChecklistItem(item.copy(done = done))
 
     /** Inserts a task and mirrors its due date into the managed calendar. */
     suspend fun addTaskSynced(task: Task): Long = withContext(Dispatchers.IO) {
@@ -271,7 +286,8 @@ class TimetableRepository private constructor(private val app: Application) {
             dao.insertRegularSlots(backup.regularSlots)
             dao.insertOneTimeSlots(backup.oneTimeSlots)
             dao.insertFreeDays(backup.freeDays)
-            dao.insertTasks(backup.tasks.map { it.copy(calendarEventId = null) })
+            dao.insertTasks(backup.tasks.map { it.copy(calendarEventId = null, remoteId = null, remoteModifiedAtMillis = null) })
+            dao.insertChecklistItems(backup.checklistItems)
         }
 
         for (term in dao.allTerms()) applyGeneration(buildPreview(term.id))
