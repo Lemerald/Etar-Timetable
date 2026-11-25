@@ -174,7 +174,10 @@ class TimetableGridView @JvmOverloads constructor(
         }
         for (dayIndex in 0 until 7) {
             val date = weekStart.plusDays(dayIndex.toLong())
-            for (slot in regular.filter { it.weekday == date.dayOfWeek.value }) {
+            // Courses limited to part of the term only show while they run.
+            for (slot in regular.filter {
+                it.weekday == date.dayOfWeek.value && courses[it.courseId]?.isActiveOn(date.toEpochDay()) != false
+            }) {
                 drawSlot(canvas, courses[slot.courseId], dayIndex, slot.startMinute, slot.endMinute,
                     oneOff = false, SlotRef.Regular(slot))
             }

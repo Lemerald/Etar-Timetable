@@ -125,6 +125,8 @@ class TimetableRepository private constructor(private val app: Application) {
     suspend fun addCourse(name: String, teacher: String, room: String, color: Int) =
         dao.insertCourse(Course(name = name, teacher = teacher, room = room, color = color))
 
+    suspend fun addCourse(course: Course) = dao.insertCourse(course.copy(id = 0))
+
     suspend fun updateCourse(course: Course) = dao.updateCourse(course)
 
     suspend fun deleteCourse(course: Course) = dao.deleteCourse(course)
@@ -343,7 +345,9 @@ class TimetableRepository private constructor(private val app: Application) {
             val epochDay = day.toEpochDay()
             if (epochDay !in freeDays) {
                 for (slot in regular) {
-                    if (slot.weekday == day.dayOfWeek.value) {
+                    if (slot.weekday == day.dayOfWeek.value &&
+                        courses[slot.courseId]?.isActiveOn(epochDay) != false
+                    ) {
                         val event = plannedEvent(epochDay, slot.slotType(), slot.id, slot.courseId,
                             slot.termId, slot.startMinute, slot.endMinute, courses)
                         desired[event.key] = event

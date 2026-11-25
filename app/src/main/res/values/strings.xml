@@ -932,6 +932,10 @@
     <string name="todo_checklist_add">Add checklist item</string>
     <string name="todo_checklist_item_hint">Item</string>
     <string name="todo_checklist_remove">Remove item</string>
+    <string name="timetable_course_limited">Only meets during part of the term</string>
+    <string name="timetable_course_first_day">First day: %1$s</string>
+    <string name="timetable_course_last_day">Last day: %1$s</string>
+    <string name="timetable_end_before_start">The end date must not be before the start date</string>
     <string name="todo_untitled">Untitled task</string>
     <string name="timetable_backup_heading">Backup &amp; export</string>
     <string name="timetable_backup_note">Class events and calendars can be exported as .ics from the calendar settings. Restoring a backup replaces all timetable data on this device.</string>

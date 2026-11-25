@@ -49,7 +49,8 @@ object ClassMeetings {
     /**
      * The next [limit] meetings of [courseId] that start after [after], following the
      * same rules as schedule generation: weekly slots repeat inside their term, one-off
-     * slots count when inside their term, and free days of the term cancel meetings.
+     * slots count when inside their term, free days of the term cancel meetings, and
+     * weekly slots respect the course's own date range.
      */
     fun upcoming(
         data: TimetableData,
@@ -67,6 +68,7 @@ object ClassMeetings {
         }
 
         val regular = data.regularSlots.filter { it.courseId == courseId }
+        val course = data.courseById(courseId)
         val result = sortedSetOf(compareBy<ClassMeeting>({ it.start }, { it.end }))
 
         data.oneTimeSlots.filter { it.courseId == courseId && isClassDay(it.termId, it.dateEpochDay) }
@@ -80,7 +82,9 @@ object ClassMeetings {
             while (!day.isAfter(lastDay) && weeklyFound < limit) {
                 val epochDay = day.toEpochDay()
                 for (slot in regular) {
-                    if (slot.weekday == day.dayOfWeek.value && isClassDay(slot.termId, epochDay)) {
+                    if (slot.weekday == day.dayOfWeek.value && isClassDay(slot.termId, epochDay) &&
+                        course?.isActiveOn(epochDay) != false
+                    ) {
                         val meeting = ClassMeeting(courseId, day, slot.startMinute, slot.endMinute)
                         result += meeting
                         if (meeting.start.isAfter(after)) weeklyFound++

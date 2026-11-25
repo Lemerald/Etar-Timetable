@@ -370,18 +370,40 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         }
         layout.addView(name); layout.addView(teacher); layout.addView(room); layout.addView(colorSpinner)
 
+        // Optional date range, e.g. a block course that only meets for a few weeks.
+        val term = data.terms.firstOrNull { it.id == activeTermId }
+        var rangeStart = existing?.startEpochDay?.let(LocalDate::ofEpochDay) ?: term?.startDate ?: LocalDate.now()
+        var rangeEnd = existing?.endEpochDay?.let(LocalDate::ofEpochDay) ?: term?.endDate ?: rangeStart.plusWeeks(6)
+        val limited = CheckBox(ctx).apply {
+            text = getString(R.string.timetable_course_limited)
+            isChecked = existing?.startEpochDay != null || existing?.endEpochDay != null
+        }
+        val startButton = Button(ctx)
+        val endButton = Button(ctx)
+        fun refreshRange() {
+            startButton.text = getString(R.string.timetable_course_first_day, rangeStart.format(DATE_FORMAT))
+            endButton.text = getString(R.string.timetable_course_last_day, rangeEnd.format(DATE_FORMAT))
+            val visibility = if (limited.isChecked) View.VISIBLE else View.GONE
+            startButton.visibility = visibility
+            endButton.visibility = visibility
+        }
+        refreshRange()
+        limited.setOnCheckedChangeListener { _, _ -> refreshRange() }
+        startButton.setOnClickListener { pickDate(rangeStart) { rangeStart = it; refreshRange() } }
+        endButton.setOnClickListener { pickDate(rangeEnd) { rangeEnd = it; refreshRange() } }
+        layout.addView(limited); layout.addView(startButton); layout.addView(endButton)
+
         showForm(if (existing == null) R.string.timetable_new_course else R.string.timetable_edit_course, layout) {
             if (name.text.isBlank()) { toast(R.string.timetable_name_required); false }
+            else if (limited.isChecked && rangeEnd.isBefore(rangeStart)) { toast(R.string.timetable_end_before_start); false }
             else {
+                val start = if (limited.isChecked) rangeStart.toEpochDay() else null
+                val end = if (limited.isChecked) rangeEnd.toEpochDay() else null
+                val course = (existing ?: Course(name = "")).copy(name = name.text.toString(),
+                    teacher = teacher.text.toString(), room = room.text.toString(),
+                    color = colors[colorSpinner.selectedItemPosition], startEpochDay = start, endEpochDay = end)
                 launch {
-                    if (existing == null) {
-                        repository.addCourse(name.text.toString(), teacher.text.toString(),
-                            room.text.toString(), colors[colorSpinner.selectedItemPosition])
-                    } else {
-                        repository.updateCourse(existing.copy(name = name.text.toString(),
-                            teacher = teacher.text.toString(), room = room.text.toString(),
-                            color = colors[colorSpinner.selectedItemPosition]))
-                    }
+                    if (existing == null) repository.addCourse(course) else repository.updateCourse(course)
                 }
                 true
             }

@@ -48,6 +48,22 @@ class ClassMeetingsTest {
     }
 
     @Test
+    fun courseDateRangeLimitsWeeklySlotsOnly() {
+        val limited = data.copy(courses = listOf(
+            Course(1, "Algorithms", startEpochDay = day("2026-12-08"), endEpochDay = day("2026-12-14")),
+        ))
+        val meetings = ClassMeetings.upcoming(limited, 1, LocalDateTime.parse("2026-11-30T00:00"), limit = 10)
+        assertEquals(
+            listOf(
+                LocalDateTime.parse("2026-12-05T14:00"), // one-off: explicit, always counts
+                LocalDateTime.parse("2026-12-09T11:00"),
+                LocalDateTime.parse("2026-12-14T09:15"),
+            ),
+            meetings.map { it.start },
+        )
+    }
+
+    @Test
     fun courseWithoutSlotsHasNoMeetings() {
         assertEquals(emptyList<ClassMeeting>(),
             ClassMeetings.upcoming(data.copy(oneTimeSlots = emptyList()), 3, LocalDateTime.parse("2026-11-01T00:00")))
