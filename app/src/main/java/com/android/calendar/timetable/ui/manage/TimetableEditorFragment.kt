@@ -2,8 +2,11 @@ package com.android.calendar.timetable.ui.manage
 
 import android.app.AlertDialog
 import android.graphics.drawable.GradientDrawable
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -19,16 +22,20 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.setPadding
+import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.android.calendar.timetable.data.Building
+import com.android.calendar.timetable.data.Campus
 import com.android.calendar.timetable.data.Course
 import com.android.calendar.timetable.data.CourseTerm
 import com.android.calendar.timetable.data.FreeDay
 import com.android.calendar.timetable.data.GenerationPreview
 import com.android.calendar.timetable.data.OneTimeSlot
 import com.android.calendar.timetable.data.RegularSlot
+import com.android.calendar.timetable.data.SlotPlace
 import com.android.calendar.timetable.data.Term
 import com.android.calendar.timetable.data.TimetableData
 import com.android.calendar.timetable.data.TimetableRepository
@@ -85,7 +92,8 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         addButton(getString(R.string.timetable_new_term)) { showTermDialog(null) }
         if (data.terms.isEmpty()) {
             addNote(getString(R.string.timetable_no_terms))
-            renderReminderSection()
+            renderPlacesSection()
+        renderReminderSection()
         renderSyncSection()
         renderBackupSection()
             return
@@ -142,7 +150,8 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
             }
         })
         container.addView(termRow)
-        addNote("${term.startDate.format(DATE_FORMAT)} – ${term.endDate.format(DATE_FORMAT)}")
+        addNote("${term.startDate.format(DATE_FORMAT)} – ${term.endDate.format(DATE_FORMAT)}" +
+            (term.campusId?.let { id -> data.campuses.firstOrNull { it.id == id } }?.let { " · ${it.name}" } ?: ""))
 
         val linkedIds = data.courseTerms.filter { it.termId == term.id }.map { it.courseId }.toSet()
 
@@ -189,7 +198,8 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         if (regular.isEmpty()) addNote(getString(R.string.timetable_no_courses_in_term))
         for (slot in regular) {
             val label = "${weekdayName(slot.weekday)} ${minutesToTime(slot.startMinute)}–" +
-                "${minutesToTime(slot.endMinute)} · ${data.courseById(slot.courseId)?.name.orEmpty()}"
+                "${minutesToTime(slot.endMinute)} · ${data.courseById(slot.courseId)?.name.orEmpty()}" +
+                placeSuffix(data.placeOf(slot.termId, slot.courseId, slot.buildingId, slot.room))
             addEditableRow(label, onEdit = { showRegularSlotDialog(slot, linkedIds) }) {
                 launch { repository.deleteRegularSlot(slot) }
             }
@@ -200,7 +210,8 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         addButton(getString(R.string.timetable_add_one_time_slot)) { showOneTimeSlotDialog(null, linkedIds) }
         for (slot in data.oneTimeSlots.filter { it.termId == term.id }) {
             val label = "${slot.date.format(DATE_FORMAT)} ${minutesToTime(slot.startMinute)}–" +
-                "${minutesToTime(slot.endMinute)} · ${data.courseById(slot.courseId)?.name.orEmpty()}"
+                "${minutesToTime(slot.endMinute)} · ${data.courseById(slot.courseId)?.name.orEmpty()}" +
+                placeSuffix(data.placeOf(slot.termId, slot.courseId, slot.buildingId, slot.room))
             addEditableRow(label, onEdit = { showOneTimeSlotDialog(slot, linkedIds) }) {
                 launch { repository.deleteOneTimeSlot(slot) }
             }
@@ -221,6 +232,7 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
                 if (isAdded) showPreview(preview)
             }
         }
+        renderPlacesSection()
         renderReminderSection()
         renderSyncSection()
         renderBackupSection()
@@ -323,6 +335,154 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
                 .setNegativeButton(android.R.string.cancel, null)
                 .show()
         }
+    }
+
+    // ---- Universities, buildings and class locations ---------------------------
+
+    private fun placeSuffix(place: SlotPlace): String = place.shortLabel?.let { " · $it" } ?: ""
+
+    private fun renderPlacesSection() {
+        addHeading(getString(R.string.timetable_places_heading))
+        addNote(getString(R.string.timetable_places_note))
+        for (campus in data.campuses) {
+            addEditableRow(campus.name + "\n" + campus.address.ifBlank { getString(R.string.timetable_no_address) },
+                onEdit = { showCampusDialog(campus) }) {
+                confirm(getString(R.string.timetable_delete_university), campus.name) {
+                    launch { repository.deleteCampus(campus); toast(R.string.timetable_locations_regenerate) }
+                }
+            }
+            for (building in data.buildings.filter { it.campusId == campus.id }) {
+                addEditableRow("    " + building.name + " · " +
+                    building.address.ifBlank { getString(R.string.timetable_uses_university_address) },
+                    onEdit = { showBuildingDialog(building, campus.id) }) {
+                    confirm(getString(R.string.timetable_delete_building), building.name) {
+                        launch { repository.deleteBuilding(building); toast(R.string.timetable_locations_regenerate) }
+                    }
+                }
+            }
+            addButton(getString(R.string.timetable_add_building_to, campus.name)) { showBuildingDialog(null, campus.id) }
+        }
+        addButton(getString(R.string.timetable_add_university)) { showCampusDialog(null) }
+    }
+
+    /** Address field plus a button that shows it in a maps app, to check it is found. */
+    private fun addressField(layout: LinearLayout, initial: String, hint: Int): EditText {
+        val ctx = requireContext()
+        val address = EditText(ctx).apply {
+            this.hint = getString(hint)
+            setText(initial)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_POSTAL_ADDRESS or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        layout.addView(address)
+        layout.addView(Button(ctx).apply {
+            text = getString(R.string.timetable_check_on_map)
+            setOnClickListener {
+                val query = address.text.toString().trim()
+                if (query.isEmpty()) return@setOnClickListener
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(query))))
+                } catch (e: ActivityNotFoundException) {
+                    toast(R.string.timetable_no_maps_app)
+                }
+            }
+        })
+        return address
+    }
+
+    private fun showCampusDialog(existing: Campus?) {
+        val ctx = requireContext()
+        val layout = formLayout()
+        val name = EditText(ctx).apply {
+            hint = getString(R.string.timetable_university_name); setText(existing?.name.orEmpty())
+        }
+        layout.addView(name)
+        val address = addressField(layout, existing?.address.orEmpty(), R.string.timetable_university_address)
+        showForm(if (existing == null) R.string.timetable_add_university else R.string.timetable_edit_university, layout) {
+            if (name.text.isBlank()) { toast(R.string.timetable_name_required); false }
+            else {
+                val campus = (existing ?: Campus(name = "")).copy(
+                    name = name.text.toString().trim(), address = address.text.toString().trim())
+                launch {
+                    repository.saveCampus(campus)
+                    if (existing != null && existing.address != campus.address) toast(R.string.timetable_locations_regenerate)
+                }
+                true
+            }
+        }
+    }
+
+    private fun showBuildingDialog(existing: Building?, campusId: Long) {
+        val ctx = requireContext()
+        val layout = formLayout()
+        val name = EditText(ctx).apply {
+            hint = getString(R.string.timetable_building_name); setText(existing?.name.orEmpty())
+        }
+        layout.addView(name)
+        val address = addressField(layout, existing?.address.orEmpty(), R.string.timetable_building_address)
+        showForm(if (existing == null) R.string.timetable_add_building else R.string.timetable_edit_building, layout) {
+            if (name.text.isBlank()) { toast(R.string.timetable_name_required); false }
+            else {
+                val building = (existing ?: Building(campusId = campusId, name = "")).copy(
+                    name = name.text.toString().trim(), address = address.text.toString().trim())
+                launch {
+                    repository.saveBuilding(building)
+                    if (existing != null && existing != building) toast(R.string.timetable_locations_regenerate)
+                }
+                true
+            }
+        }
+    }
+
+    private class PlaceFields(val buildingId: () -> Long?, val room: () -> String?)
+
+    /**
+     * Building + room inputs for a slot, with a live preview of the resulting calendar
+     * location. Buildings of the term's university are listed first.
+     */
+    private fun placeFields(
+        layout: LinearLayout, courseSpinner: Spinner, courses: List<Course>,
+        initialBuildingId: Long?, initialRoom: String?,
+    ): PlaceFields {
+        val ctx = requireContext()
+        val term = data.terms.firstOrNull { it.id == activeTermId }
+        val campusNames = data.campuses.associate { it.id to it.name }
+        val buildings = data.buildings.sortedWith(compareBy({ it.campusId != term?.campusId },
+            { campusNames[it.campusId] }, { it.name }))
+        val buildingSpinner = Spinner(ctx).apply {
+            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item,
+                listOf(getString(R.string.timetable_no_building)) + buildings.map {
+                    if (it.campusId == term?.campusId) it.name else "${campusNames[it.campusId]} · ${it.name}"
+                }).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            setSelection(buildings.indexOfFirst { it.id == initialBuildingId } + 1)
+        }
+        val room = EditText(ctx).apply { setText(initialRoom.orEmpty()) }
+        val preview = TextView(ctx).apply { textSize = 12f }
+        fun buildingId() = buildings.getOrNull(buildingSpinner.selectedItemPosition - 1)?.id
+        fun roomText() = room.text.toString().trim().ifEmpty { null }
+        fun refresh() {
+            val course = courses.getOrNull(courseSpinner.selectedItemPosition)
+            room.hint = course?.room?.takeIf { it.isNotBlank() }
+                ?.let { getString(R.string.timetable_room_default, it) } ?: getString(R.string.timetable_room)
+            val location = course?.let { data.placeOf(activeTermId, it.id, buildingId(), roomText()).eventLocation }
+            preview.text = getString(R.string.timetable_location_preview,
+                location?.ifEmpty { null } ?: getString(R.string.timetable_no_location))
+        }
+        val listener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) = refresh()
+            override fun onNothingSelected(parent: AdapterView<*>) = Unit
+        }
+        buildingSpinner.onItemSelectedListener = listener
+        courseSpinner.onItemSelectedListener = listener
+        room.doAfterTextChanged { refresh() }
+        if (buildings.isNotEmpty()) {
+            layout.addView(TextView(ctx).apply { text = getString(R.string.timetable_building) })
+            layout.addView(buildingSpinner)
+        }
+        layout.addView(room)
+        layout.addView(preview)
+        refresh()
+        return PlaceFields(::buildingId, ::roomText)
     }
 
     private fun renderReminderSection() {
@@ -464,6 +624,21 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
             setOnClickListener { pickDate(end) { picked -> end = picked; text = ctx.getString(R.string.timetable_end_date) + ": " + picked.format(DATE_FORMAT) } }
         }
         layout.addView(name); layout.addView(startButton); layout.addView(endButton)
+        val campuses = data.campuses
+        val campusSpinner = Spinner(ctx).apply {
+            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item,
+                listOf(getString(R.string.timetable_no_university)) + campuses.map { it.name }).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            setSelection(campuses.indexOfFirst { it.id == existing?.campusId } + 1)
+        }
+        layout.addView(TextView(ctx).apply { text = getString(R.string.timetable_term_university) })
+        layout.addView(campusSpinner)
+        if (campuses.isEmpty()) layout.addView(TextView(ctx).apply {
+            text = getString(R.string.timetable_term_university_hint)
+            textSize = 12f
+        })
+        fun selectedCampusId() = campuses.getOrNull(campusSpinner.selectedItemPosition - 1)?.id
 
         showForm(if (existing == null) R.string.timetable_new_term else R.string.timetable_edit_term, layout) {
             when {
@@ -474,9 +649,15 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
                         if (existing == null) {
                             val id = repository.addTerm(name.text.toString(), start, end)
                             activeTermId = id
+                            selectedCampusId()?.let { campusId ->
+                                repository.updateTerm(Term(id, name.text.toString(), start.toEpochDay(),
+                                    end.toEpochDay(), campusId))
+                            }
                         } else {
                             repository.updateTerm(existing.copy(name = name.text.toString(),
-                                startEpochDay = start.toEpochDay(), endEpochDay = end.toEpochDay()))
+                                startEpochDay = start.toEpochDay(), endEpochDay = end.toEpochDay(),
+                                campusId = selectedCampusId()))
+                            if (existing.campusId != selectedCampusId()) toast(R.string.timetable_locations_regenerate)
                         }
                     }
                     true
@@ -490,7 +671,7 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         val layout = formLayout()
         val name = EditText(ctx).apply { hint = getString(R.string.timetable_course_name); setText(existing?.name.orEmpty()) }
         val teacher = EditText(ctx).apply { hint = getString(R.string.timetable_teacher); setText(existing?.teacher.orEmpty()) }
-        val room = EditText(ctx).apply { hint = getString(R.string.timetable_room); setText(existing?.room.orEmpty()) }
+        val room = EditText(ctx).apply { hint = getString(R.string.timetable_course_default_room); setText(existing?.room.orEmpty()) }
         val colors = ctx.resources.getIntArray(R.array.defaultCalendarColors).toList()
         val colorSpinner = Spinner(ctx).apply {
             adapter = object : ArrayAdapter<Int>(ctx, android.R.layout.simple_spinner_item, colors) {
@@ -569,6 +750,7 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         )
         layout.addView(courseSpinner); layout.addView(weekdaySpinner)
         layout.addView(startButton); layout.addView(endButton)
+        val place = placeFields(layout, courseSpinner, courses, existing?.buildingId, existing?.room)
 
         showForm(if (existing == null) R.string.timetable_add_regular_slot else R.string.timetable_edit_slot, layout) {
             val start = startButton.tag as Int
@@ -581,6 +763,7 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
                         id = existing?.id ?: 0, courseId = courseId, termId = activeTermId,
                         weekday = weekdaySpinner.selectedItemPosition + 1,
                         startMinute = start, endMinute = end,
+                        buildingId = place.buildingId(), room = place.room(),
                     )
                     if (existing == null) repository.addRegularSlot(slot)
                     else repository.updateRegularSlot(slot)
@@ -605,6 +788,7 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         dateButton.setOnClickListener { pickDate(date) { picked -> date = picked; dateButton.text = getString(R.string.timetable_date) + ": " + picked.format(DATE_FORMAT) } }
         layout.addView(courseSpinner); layout.addView(dateButton)
         layout.addView(startButton); layout.addView(endButton)
+        val place = placeFields(layout, courseSpinner, courses, existing?.buildingId, existing?.room)
 
         showForm(if (existing == null) R.string.timetable_add_one_time_slot else R.string.timetable_edit_slot, layout) {
             val start = startButton.tag as Int
@@ -617,6 +801,7 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
                         courseId = courses[courseSpinner.selectedItemPosition].id,
                         termId = activeTermId, dateEpochDay = date.toEpochDay(),
                         startMinute = start, endMinute = end,
+                        buildingId = place.buildingId(), room = place.room(),
                     )
                     if (existing == null) repository.addOneTimeSlot(slot)
                     else repository.updateOneTimeSlot(slot)

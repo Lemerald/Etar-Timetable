@@ -231,7 +231,11 @@ class TimetableGridView @JvmOverloads constructor(
         val title = TextUtils.ellipsize(course?.name ?: "", titlePaint,
             (widthPx - dp(12)).toFloat(), TextUtils.TruncateAt.END).toString()
         canvas.drawText(title, (x + dp(6)).toFloat(), (y + dp(14)).toFloat(), titlePaint)
-        course?.room?.takeIf { it.isNotBlank() }?.let { roomText ->
+        val place = when (ref) {
+            is SlotRef.Regular -> data.placeOf(ref.slot.termId, ref.slot.courseId, ref.slot.buildingId, ref.slot.room)
+            is SlotRef.OneTime -> data.placeOf(ref.slot.termId, ref.slot.courseId, ref.slot.buildingId, ref.slot.room)
+        }
+        place.shortLabel?.let { roomText ->
             val room = TextUtils.ellipsize(roomText, detailPaint,
                 (widthPx - dp(12)).toFloat(), TextUtils.TruncateAt.END).toString()
             canvas.drawText(room, (x + dp(6)).toFloat(), (y + dp(28)).toFloat(), detailPaint)

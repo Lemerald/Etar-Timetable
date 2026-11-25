@@ -84,6 +84,8 @@ class TimetableRepository private constructor(private val app: Application) {
             dao.observeFreeDays(),
             dao.observeTasks(),
             dao.observeChecklistItems(),
+            dao.observeCampuses(),
+            dao.observeBuildings(),
         )
     ) { values ->
         @Suppress("UNCHECKED_CAST")
@@ -96,6 +98,8 @@ class TimetableRepository private constructor(private val app: Application) {
             freeDays = values[5] as List<FreeDay>,
             tasks = values[6] as List<Task>,
             checklistItems = values[7] as List<ChecklistItem>,
+            campuses = values[8] as List<Campus>,
+            buildings = values[9] as List<Building>,
         )
     }
 
@@ -156,6 +160,28 @@ class TimetableRepository private constructor(private val app: Application) {
         dao.insertFreeDay(FreeDay(termId = termId, dateEpochDay = date.toEpochDay()))
 
     suspend fun deleteFreeDay(freeDay: FreeDay) = dao.deleteFreeDay(freeDay)
+
+    // ---- Universities and buildings (class locations) -------------------------
+    suspend fun saveCampus(campus: Campus): Long =
+        if (campus.id == 0L) dao.insertCampus(campus) else campus.id.also { dao.updateCampus(campus) }
+
+    suspend fun saveBuilding(building: Building): Long =
+        if (building.id == 0L) dao.insertBuilding(building) else building.id.also { dao.updateBuilding(building) }
+
+    /** Deletes a university with its buildings; terms and slots fall back to no location. */
+    suspend fun deleteCampus(campus: Campus) = database.withTransaction {
+        val buildingIds = dao.buildings().filter { it.campusId == campus.id }.map { it.id }
+        dao.clearRegularSlotBuildings(buildingIds)
+        dao.clearOneTimeSlotBuildings(buildingIds)
+        dao.clearTermCampus(campus.id)
+        dao.deleteCampus(campus)
+    }
+
+    suspend fun deleteBuilding(building: Building) = database.withTransaction {
+        dao.clearRegularSlotBuildings(listOf(building.id))
+        dao.clearOneTimeSlotBuildings(listOf(building.id))
+        dao.deleteBuilding(building)
+    }
 
     suspend fun addTask(task: Task) = dao.insertTask(task)
 
@@ -370,6 +396,10 @@ class TimetableRepository private constructor(private val app: Application) {
             dao.deleteAllCourseTerms()
             dao.deleteAllCourses()
             dao.deleteAllTerms()
+            dao.deleteAllBuildings()
+            dao.deleteAllCampuses()
+            dao.insertCampuses(backup.campuses)
+            dao.insertBuildings(backup.buildings)
             dao.insertTerms(backup.terms)
             dao.insertCourses(backup.courses)
             dao.insertCourseTerms(backup.courseTerms)
@@ -398,6 +428,10 @@ class TimetableRepository private constructor(private val app: Application) {
         val freeDays = dao.freeDays(termId).map { it.dateEpochDay }.toSet()
         val regular = dao.regularSlots(termId)
         val oneTime = dao.oneTimeSlots(termId)
+        val campuses = dao.campuses().associateBy { it.id }
+        val buildings = dao.buildings().associateBy { it.id }
+        fun location(courseId: Long, buildingId: Long?, room: String?) = SlotLocations.resolve(
+            buildingId, room, courses[courseId], term, campuses, buildings).eventLocation
 
         val desired = mutableMapOf<String, PlannedEvent>()
         var day = term.startDate
@@ -409,7 +443,8 @@ class TimetableRepository private constructor(private val app: Application) {
                         courses[slot.courseId]?.isActiveOn(epochDay) != false
                     ) {
                         val event = plannedEvent(epochDay, slot.slotType(), slot.id, slot.courseId,
-                            slot.termId, slot.startMinute, slot.endMinute, courses)
+                            slot.termId, slot.startMinute, slot.endMinute, courses,
+                            location(slot.courseId, slot.buildingId, slot.room))
                         desired[event.key] = event
                     }
                 }
@@ -420,7 +455,8 @@ class TimetableRepository private constructor(private val app: Application) {
             val epochDay = slot.dateEpochDay
             if (epochDay in term.startEpochDay..term.endEpochDay && epochDay !in freeDays) {
                 val event = plannedEvent(epochDay, "once", slot.id, slot.courseId, slot.termId,
-                    slot.startMinute, slot.endMinute, courses)
+                    slot.startMinute, slot.endMinute, courses,
+                    location(slot.courseId, slot.buildingId, slot.room))
                 desired[event.key] = event
             }
         }
@@ -583,11 +619,10 @@ class TimetableRepository private constructor(private val app: Application) {
 
     private fun plannedEvent(
         epochDay: Long, slotType: String, slotId: Long, courseId: Long, termId: Long,
-        startMinute: Int, endMinute: Int, courses: Map<Long, Course>,
+        startMinute: Int, endMinute: Int, courses: Map<Long, Course>, location: String,
     ): PlannedEvent {
         val course = courses[courseId]
         val title = course?.name ?: app.getString(R.string.timetable_unnamed_course)
-        val location = course?.room.orEmpty()
         val description = buildString {
             course?.teacher?.takeIf { it.isNotBlank() }?.let { append(it).append('\n') }
             append(app.getString(R.string.timetable_generated_description))

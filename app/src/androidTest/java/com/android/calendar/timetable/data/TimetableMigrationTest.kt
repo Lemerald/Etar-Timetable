@@ -65,4 +65,40 @@ class TimetableMigrationTest {
             db.close()
         }
     }
+
+    @Test
+    fun migrate3To4KeepsData() {
+        helper.createDatabase(dbName, 3).apply {
+            execSQL("INSERT INTO terms (id, name, startEpochDay, endEpochDay) VALUES (1, 'WS', 20740, 20860)")
+            execSQL("INSERT INTO courses (id, name, teacher, room, color) VALUES (5, 'Algorithms', 'X', 'HS 1', -15444807)")
+            execSQL("INSERT INTO regular_slots (id, courseId, termId, weekday, startMinute, endMinute) VALUES (7, 5, 1, 1, 555, 645)")
+            execSQL("INSERT INTO one_time_slots (id, courseId, termId, dateEpochDay, startMinute, endMinute) VALUES (8, 5, 1, 20800, 600, 660)")
+            close()
+        }
+
+        helper.runMigrationsAndValidate(dbName, 4, true).close()
+
+        val db = Room.databaseBuilder(
+            InstrumentationRegistry.getInstrumentation().targetContext,
+            TimetableDatabase::class.java, dbName,
+        ).build()
+        try {
+            runBlocking {
+                val dao = db.timetableDao()
+                assertNull(dao.term(1)!!.campusId)
+                val slot = dao.regularSlots(1).single()
+                assertEquals(555, slot.startMinute)
+                assertNull(slot.buildingId)
+                assertNull(slot.room)
+                assertNull(dao.oneTimeSlots(1).single().buildingId)
+                assertEquals(0, dao.campuses().size)
+                // New tables are usable.
+                val campus = dao.insertCampus(Campus(name = "MIT", address = "77 Massachusetts Ave"))
+                dao.insertBuilding(Building(campusId = campus, name = "A"))
+                assertEquals(1, dao.buildings().size)
+            }
+        } finally {
+            db.close()
+        }
+    }
 }

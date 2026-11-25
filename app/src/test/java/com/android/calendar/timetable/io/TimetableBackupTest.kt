@@ -1,5 +1,7 @@
 package com.android.calendar.timetable.io
 
+import com.android.calendar.timetable.data.Building
+import com.android.calendar.timetable.data.Campus
 import com.android.calendar.timetable.data.ChecklistItem
 import com.android.calendar.timetable.data.Course
 import com.android.calendar.timetable.data.CourseTerm
@@ -18,10 +20,12 @@ import org.junit.Test
 class TimetableBackupTest {
 
     private val sample = TimetableData(
-        terms = listOf(Term(1, "WS 26/27", 20_740, 20_860)),
+        terms = listOf(Term(1, "WS 26/27", 20_740, 20_860, campusId = 3)),
+        campuses = listOf(Campus(3, "MIT", "77 Massachusetts Ave")),
+        buildings = listOf(Building(4, 3, "Building A", "32 Vassar St"), Building(5, 3, "B", "")),
         courses = listOf(Course(5, "Algorithms", "Prof. X", "HS 1", 0xFF1454B9.toInt(), 20_750, 20_800)),
         courseTerms = listOf(CourseTerm(5, 1)),
-        regularSlots = listOf(RegularSlot(7, 5, 1, 1, 9 * 60, 10 * 60 + 30)),
+        regularSlots = listOf(RegularSlot(7, 5, 1, 1, 9 * 60, 10 * 60 + 30, buildingId = 4, room = "1.5")),
         oneTimeSlots = listOf(OneTimeSlot(8, 5, 1, 20_800, 14 * 60, 16 * 60)),
         freeDays = listOf(FreeDay(9, 1, 20_810)),
         tasks = listOf(
@@ -53,8 +57,16 @@ class TimetableBackupTest {
 
     @Test
     fun rejectsNewerVersion() {
-        val json = TimetableBackup.encode(sample).replace("\"version\": 2", "\"version\": 99")
+        val json = TimetableBackup.encode(sample).replace("\"version\": 3", "\"version\": 99")
         assertThrows(TimetableBackup.InvalidBackupException::class.java) { TimetableBackup.decode(json) }
+    }
+
+    @Test
+    fun rejectsDanglingBuilding() {
+        val broken = sample.copy(regularSlots = listOf(RegularSlot(7, 5, 1, 1, 0, 60, buildingId = 42)))
+        assertThrows(TimetableBackup.InvalidBackupException::class.java) {
+            TimetableBackup.decode(TimetableBackup.encode(broken))
+        }
     }
 
     @Test

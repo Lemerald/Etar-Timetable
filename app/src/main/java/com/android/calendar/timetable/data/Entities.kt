@@ -26,10 +26,33 @@ data class Term(
     val name: String,
     val startEpochDay: Long,
     val endEpochDay: Long,
+    /** Default university/campus of this term (class locations fall back to its address). */
+    val campusId: Long? = null,
 ) {
     val startDate: LocalDate get() = LocalDate.ofEpochDay(startEpochDay)
     val endDate: LocalDate get() = LocalDate.ofEpochDay(endEpochDay)
 }
+
+/** A university / campus with an optional street address. */
+@Entity(tableName = "campuses")
+data class Campus(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    @ColumnInfo(defaultValue = "") val address: String = "",
+)
+
+/** A building of a [Campus]; an empty address means "use the campus address". */
+@Entity(
+    tableName = "buildings",
+    indices = [Index("campusId")],
+    foreignKeys = [ForeignKey(Campus::class, ["id"], ["campusId"], onDelete = ForeignKey.CASCADE)],
+)
+data class Building(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val campusId: Long,
+    val name: String,
+    @ColumnInfo(defaultValue = "") val address: String = "",
+)
 
 /** A course definition. Courses can be linked to multiple [Term]s. */
 @Entity(tableName = "courses")
@@ -75,6 +98,9 @@ data class RegularSlot(
     val weekday: Int,
     val startMinute: Int,
     val endMinute: Int,
+    /** Where the class meets; null building = campus of the term, null room = course room. */
+    val buildingId: Long? = null,
+    val room: String? = null,
 )
 
 /** A one-off class meeting (substituted / extra class). */
@@ -93,6 +119,8 @@ data class OneTimeSlot(
     val dateEpochDay: Long,
     val startMinute: Int,
     val endMinute: Int,
+    val buildingId: Long? = null,
+    val room: String? = null,
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(dateEpochDay)
 }
@@ -202,7 +230,14 @@ data class TimetableData(
     val freeDays: List<FreeDay> = emptyList(),
     val tasks: List<Task> = emptyList(),
     val checklistItems: List<ChecklistItem> = emptyList(),
+    val campuses: List<Campus> = emptyList(),
+    val buildings: List<Building> = emptyList(),
 ) {
+    /** Where a slot of [courseId] in [termId] takes place (see [SlotLocations]). */
+    fun placeOf(termId: Long, courseId: Long, buildingId: Long?, room: String?): SlotPlace =
+        SlotLocations.resolve(buildingId, room, courseById(courseId), terms.firstOrNull { it.id == termId },
+            campuses.associateBy { it.id }, buildings.associateBy { it.id })
+
     fun checklistFor(taskId: Long): List<ChecklistItem> =
         checklistItems.filter { it.taskId == taskId }.sortedBy { it.position }
 

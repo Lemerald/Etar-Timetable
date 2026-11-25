@@ -193,4 +193,42 @@ interface TimetableDao {
 
     @Query("UPDATE tasks SET remoteId = :remoteId, remoteModifiedAtMillis = :remoteModified WHERE id = :taskId")
     suspend fun linkRemote(taskId: Long, remoteId: Long, remoteModified: Long)
+
+    // ---- Universities and buildings -----------------------------------------
+    @Query("SELECT * FROM campuses ORDER BY name")
+    fun observeCampuses(): Flow<List<Campus>>
+
+    @Query("SELECT * FROM buildings ORDER BY name")
+    fun observeBuildings(): Flow<List<Building>>
+
+    @Query("SELECT * FROM campuses")
+    suspend fun campuses(): List<Campus>
+
+    @Query("SELECT * FROM buildings")
+    suspend fun buildings(): List<Building>
+
+    @Insert suspend fun insertCampus(campus: Campus): Long
+    @Update suspend fun updateCampus(campus: Campus)
+    @Delete suspend fun deleteCampus(campus: Campus)
+    @Insert suspend fun insertBuilding(building: Building): Long
+    @Update suspend fun updateBuilding(building: Building)
+    @Delete suspend fun deleteBuilding(building: Building)
+
+    @Query("UPDATE terms SET campusId = NULL WHERE campusId = :campusId")
+    suspend fun clearTermCampus(campusId: Long)
+
+    @Query("UPDATE regular_slots SET buildingId = NULL WHERE buildingId IN (:buildingIds)")
+    suspend fun clearRegularSlotBuildings(buildingIds: List<Long>)
+
+    @Query("UPDATE one_time_slots SET buildingId = NULL WHERE buildingId IN (:buildingIds)")
+    suspend fun clearOneTimeSlotBuildings(buildingIds: List<Long>)
+
+    @Query("DELETE FROM buildings")
+    suspend fun deleteAllBuildings()
+
+    @Query("DELETE FROM campuses")
+    suspend fun deleteAllCampuses()
+
+    @Insert suspend fun insertCampuses(items: List<Campus>)
+    @Insert suspend fun insertBuildings(items: List<Building>)
 }

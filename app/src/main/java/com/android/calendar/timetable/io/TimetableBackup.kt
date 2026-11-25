@@ -8,6 +8,8 @@
  */
 package com.android.calendar.timetable.io
 
+import com.android.calendar.timetable.data.Building
+import com.android.calendar.timetable.data.Campus
 import com.android.calendar.timetable.data.ChecklistItem
 import com.android.calendar.timetable.data.Course
 import com.android.calendar.timetable.data.CourseTerm
@@ -31,8 +33,11 @@ import org.json.JSONObject
 object TimetableBackup {
 
     const val FORMAT = "etar-timetable-backup"
-    /** 1: initial. 2: course date range, task kind/end/priority/repeat, checklists. */
-    const val VERSION = 2
+    /**
+     * 1: initial. 2: course date range, task kind/end/priority/repeat, checklists.
+     * 3: universities and buildings, term university, slot building and room.
+     */
+    const val VERSION = 3
 
     class InvalidBackupException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
@@ -44,6 +49,14 @@ object TimetableBackup {
             put("terms", JSONArray(data.terms.map {
                 JSONObject().put("id", it.id).put("name", it.name)
                     .put("startEpochDay", it.startEpochDay).put("endEpochDay", it.endEpochDay)
+                    .putOpt("campusId", it.campusId)
+            }))
+            put("campuses", JSONArray(data.campuses.map {
+                JSONObject().put("id", it.id).put("name", it.name).put("address", it.address)
+            }))
+            put("buildings", JSONArray(data.buildings.map {
+                JSONObject().put("id", it.id).put("campusId", it.campusId).put("name", it.name)
+                    .put("address", it.address)
             }))
             put("courses", JSONArray(data.courses.map {
                 JSONObject().put("id", it.id).put("name", it.name).put("teacher", it.teacher)
@@ -56,11 +69,13 @@ object TimetableBackup {
             put("regularSlots", JSONArray(data.regularSlots.map {
                 JSONObject().put("id", it.id).put("courseId", it.courseId).put("termId", it.termId)
                     .put("weekday", it.weekday).put("startMinute", it.startMinute).put("endMinute", it.endMinute)
+                    .putOpt("buildingId", it.buildingId).putOpt("room", it.room)
             }))
             put("oneTimeSlots", JSONArray(data.oneTimeSlots.map {
                 JSONObject().put("id", it.id).put("courseId", it.courseId).put("termId", it.termId)
                     .put("dateEpochDay", it.dateEpochDay)
                     .put("startMinute", it.startMinute).put("endMinute", it.endMinute)
+                    .putOpt("buildingId", it.buildingId).putOpt("room", it.room)
             }))
             put("freeDays", JSONArray(data.freeDays.map {
                 JSONObject().put("id", it.id).put("termId", it.termId).put("dateEpochDay", it.dateEpochDay)
@@ -93,7 +108,14 @@ object TimetableBackup {
         val data = try {
             TimetableData(
                 terms = root.objects("terms").map {
-                    Term(it.getLong("id"), it.getString("name"), it.getLong("startEpochDay"), it.getLong("endEpochDay"))
+                    Term(it.getLong("id"), it.getString("name"), it.getLong("startEpochDay"), it.getLong("endEpochDay"),
+                        it.optLongOrNull("campusId"))
+                },
+                campuses = root.objects("campuses").map {
+                    Campus(it.getLong("id"), it.getString("name"), it.optString("address"))
+                },
+                buildings = root.objects("buildings").map {
+                    Building(it.getLong("id"), it.getLong("campusId"), it.getString("name"), it.optString("address"))
                 },
                 courses = root.objects("courses").map {
                     Course(it.getLong("id"), it.getString("name"), it.optString("teacher"),
@@ -105,11 +127,13 @@ object TimetableBackup {
                 },
                 regularSlots = root.objects("regularSlots").map {
                     RegularSlot(it.getLong("id"), it.getLong("courseId"), it.getLong("termId"),
-                        it.getInt("weekday"), it.getInt("startMinute"), it.getInt("endMinute"))
+                        it.getInt("weekday"), it.getInt("startMinute"), it.getInt("endMinute"),
+                        it.optLongOrNull("buildingId"), it.optStringOrNull("room"))
                 },
                 oneTimeSlots = root.objects("oneTimeSlots").map {
                     OneTimeSlot(it.getLong("id"), it.getLong("courseId"), it.getLong("termId"),
-                        it.getLong("dateEpochDay"), it.getInt("startMinute"), it.getInt("endMinute"))
+                        it.getLong("dateEpochDay"), it.getInt("startMinute"), it.getInt("endMinute"),
+                        it.optLongOrNull("buildingId"), it.optStringOrNull("room"))
                 },
                 freeDays = root.objects("freeDays").map {
                     FreeDay(it.getLong("id"), it.getLong("termId"), it.getLong("dateEpochDay"))
@@ -152,6 +176,12 @@ object TimetableBackup {
         data.oneTimeSlots.forEach { check(it.courseId in courseIds && it.termId in termIds, "course or term") }
         data.freeDays.forEach { check(it.termId in termIds, "term") }
         data.tasks.forEach { task -> task.courseId?.let { check(it in courseIds, "course") } }
+        val campusIds = data.campuses.map { it.id }.toSet()
+        val buildingIds = data.buildings.map { it.id }.toSet()
+        data.buildings.forEach { check(it.campusId in campusIds, "university") }
+        data.terms.forEach { term -> term.campusId?.let { check(it in campusIds, "university") } }
+        (data.regularSlots.map { it.buildingId } + data.oneTimeSlots.map { it.buildingId })
+            .forEach { id -> id?.let { check(it in buildingIds, "building") } }
         val taskIds = data.tasks.map { it.id }.toSet()
         data.checklistItems.forEach { check(it.taskId in taskIds, "task") }
     }
@@ -162,4 +192,6 @@ object TimetableBackup {
     }
 
     private fun JSONObject.optLongOrNull(key: String): Long? = if (isNull(key)) null else getLong(key)
+
+    private fun JSONObject.optStringOrNull(key: String): String? = if (isNull(key)) null else getString(key)
 }
