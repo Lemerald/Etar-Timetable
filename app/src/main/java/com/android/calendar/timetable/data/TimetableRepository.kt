@@ -18,6 +18,7 @@ import com.android.calendar.persistence.CalendarRepository
 import com.android.calendar.timetable.io.TaskIcs
 import com.android.calendar.timetable.reminders.DueSummary
 import com.android.calendar.timetable.reminders.ReminderSettings
+import com.android.calendar.timetable.sync.OpenTasksSync
 import com.android.calendar.timetable.io.TimetableBackup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -161,6 +162,34 @@ class TimetableRepository private constructor(private val app: Application) {
 
     suspend fun deleteTask(task: Task) = dao.deleteTask(task)
 
+    // ---- Task sync (OpenTasks bridge) ---------------------------------------
+    suspend fun allTasks(): List<Task> = dao.allTasks()
+
+    suspend fun clearRemoteLinks() = dao.clearRemoteLinks()
+
+    suspend fun linkRemote(taskId: Long, remoteId: Long, remoteModified: Long) =
+        dao.linkRemote(taskId, remoteId, remoteModified)
+
+    /** Stores a task coming from sync as-is (no modification stamp, no sync trigger). */
+    suspend fun saveSyncedTask(task: Task): Long = withContext(Dispatchers.IO) {
+        if (task.id == 0L) {
+            val id = dao.insertTask(task)
+            val saved = task.copy(id = id)
+            dao.updateTask(saved.copy(calendarEventId = syncTaskEvent(saved)))
+            id
+        } else {
+            dao.updateTask(task.copy(calendarEventId = syncTaskEvent(task)))
+            task.id
+        }.also { DueSummary.schedule(app) }
+    }
+
+    /** Deletes a task that was deleted remotely (does not touch the remote side). */
+    suspend fun deleteLocalOnly(task: Task) = withContext(Dispatchers.IO) {
+        task.calendarEventId?.let { app.contentResolver.delete(eventUri(it), null, null) }
+        dao.deleteTask(task)
+        DueSummary.schedule(app)
+    }
+
     /** Replaces a task's checklist with [items] (in order). */
     suspend fun setChecklist(taskId: Long, items: List<ChecklistItem>) = withContext(Dispatchers.IO) {
         database.withTransaction {
@@ -181,6 +210,7 @@ class TimetableRepository private constructor(private val app: Application) {
         val eventId = syncTaskEvent(saved)
         if (eventId != saved.calendarEventId) dao.updateTask(saved.copy(calendarEventId = eventId))
         DueSummary.schedule(app)
+        OpenTasksSync.requestSync(app)
         id
     }
 
@@ -188,6 +218,7 @@ class TimetableRepository private constructor(private val app: Application) {
         val changed = task.copy(modifiedAtMillis = System.currentTimeMillis())
         dao.updateTask(changed.copy(calendarEventId = syncTaskEvent(changed)))
         DueSummary.schedule(app)
+        OpenTasksSync.requestSync(app)
     }
 
     /**
@@ -216,6 +247,7 @@ class TimetableRepository private constructor(private val app: Application) {
     }
 
     suspend fun deleteTaskSynced(task: Task) = withContext(Dispatchers.IO) {
+        task.remoteId?.let { OpenTasksSync.deleteRemote(app, it) }
         task.calendarEventId?.let { app.contentResolver.delete(eventUri(it), null, null) }
         dao.deleteTask(task)
         DueSummary.schedule(app)
@@ -311,6 +343,22 @@ class TimetableRepository private constructor(private val app: Application) {
             dao.allTasks().mapNotNull { it.calendarEventId } + markedEventIds()
         oldEventIds.toSet().forEach { resolver.delete(eventUri(it), null, null) }
 
+        // Task sync: restored tasks that are the same task as before (same id and creation
+        // time) keep their remote link and are pushed again; remote copies of tasks that
+        // the restore removes are deleted, so the server matches the restored state.
+        val now = System.currentTimeMillis()
+        val oldLinks = dao.allTasks().filter { it.remoteId != null }
+            .associateBy { it.id to it.createdAtMillis }
+        val restoredTasks = backup.tasks.map { task ->
+            val old = oldLinks[task.id to task.createdAtMillis]
+            task.copy(calendarEventId = null, remoteId = old?.remoteId,
+                remoteModifiedAtMillis = old?.remoteModifiedAtMillis,
+                modifiedAtMillis = if (old != null) now else task.modifiedAtMillis)
+        }
+        val keptRemote = restoredTasks.mapNotNull { it.remoteId }.toSet()
+        oldLinks.values.mapNotNull { it.remoteId }.filter { it !in keptRemote }
+            .forEach { OpenTasksSync.deleteRemote(app, it) }
+
         database.withTransaction {
             dao.deleteAllGeneratedEvents()
             dao.deleteAllTasks()
@@ -326,12 +374,14 @@ class TimetableRepository private constructor(private val app: Application) {
             dao.insertRegularSlots(backup.regularSlots)
             dao.insertOneTimeSlots(backup.oneTimeSlots)
             dao.insertFreeDays(backup.freeDays)
-            dao.insertTasks(backup.tasks.map { it.copy(calendarEventId = null, remoteId = null, remoteModifiedAtMillis = null) })
+            dao.insertTasks(restoredTasks)
             dao.insertChecklistItems(backup.checklistItems)
         }
 
         for (term in dao.allTerms()) applyGeneration(buildPreview(term.id))
-        for (task in dao.allTasks()) updateTaskSynced(task)
+        // Rebuild deadline events; restored tasks that were never synced get pushed as new.
+        for (task in dao.allTasks()) saveSyncedTask(task)
+        OpenTasksSync.requestSync(app)
     }
 
     /** Used by the event editor to warn that an event belongs to the timetable. */

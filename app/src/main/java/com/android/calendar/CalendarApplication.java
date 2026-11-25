@@ -31,6 +31,8 @@ public class CalendarApplication extends Application {
         super.onCreate();
         // Timetable extension: keep the "due tomorrow" summary alarm scheduled.
         com.android.calendar.timetable.reminders.DueSummary.schedule(this);
+        // Timetable extension: two-way task sync with DAVx5 via Tasks.org/OpenTasks (if set up).
+        com.android.calendar.timetable.sync.OpenTasksSync.start(this);
         mCurrentNightMode = getResources().getConfiguration().uiMode
                 & Configuration.UI_MODE_NIGHT_MASK;
 

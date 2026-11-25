@@ -35,6 +35,7 @@ import com.android.calendar.timetable.data.TimetableRepository
 import com.android.calendar.timetable.data.minutesToTime
 import com.android.calendar.timetable.io.TimetableBackup
 import com.android.calendar.timetable.reminders.ReminderSettings
+import com.android.calendar.timetable.sync.OpenTasksSync
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.timepicker.MaterialTimePicker
@@ -85,6 +86,7 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         if (data.terms.isEmpty()) {
             addNote(getString(R.string.timetable_no_terms))
             renderReminderSection()
+        renderSyncSection()
         renderBackupSection()
             return
         }
@@ -220,6 +222,7 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
             }
         }
         renderReminderSection()
+        renderSyncSection()
         renderBackupSection()
     }
 
@@ -238,6 +241,89 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) readBackup(uri)
         }
+
+    // ---- Task sync with DAVx5 (via Tasks.org / OpenTasks) ---------------------
+    private var pendingSyncProvider: OpenTasksSync.Provider? = null
+
+    private val syncPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+            val provider = pendingSyncProvider ?: return@registerForActivityResult
+            if (granted.values.all { it }) chooseTaskList(provider)
+            else toast(R.string.timetable_sync_permission_denied)
+        }
+
+    private fun renderSyncSection() {
+        val ctx = requireContext()
+        addHeading(getString(R.string.timetable_sync_heading))
+        val installed = OpenTasksSync.installedProviders(ctx)
+        if (installed.isEmpty()) {
+            addNote(getString(R.string.timetable_sync_no_provider))
+            return
+        }
+        if (OpenTasksSync.isEnabled(ctx)) {
+            val last = OpenTasksSync.lastSync(ctx).takeIf { it > 0 }?.let {
+                Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())
+                    .format(DateTimeFormatter.ofPattern("d/M HH:mm", Locale.getDefault()))
+            } ?: "–"
+            addNote(getString(R.string.timetable_sync_status, OpenTasksSync.listName(ctx),
+                OpenTasksSync.provider(ctx)?.appName, last, OpenTasksSync.lastResult(ctx) ?: "–"))
+            addButton(getString(R.string.timetable_sync_now)) {
+                launch {
+                    OpenTasksSync.sync(ctx)
+                    if (isAdded) render()
+                }
+            }
+            addButton(getString(R.string.timetable_sync_change_list)) { startChoosingList(installed) }
+            addButton(getString(R.string.timetable_sync_stop)) {
+                confirm(getString(R.string.timetable_sync_stop), getString(R.string.timetable_sync_stop_confirm)) {
+                    launch { OpenTasksSync.disable(ctx); if (isAdded) render() }
+                }
+            }
+        } else {
+            addNote(getString(R.string.timetable_sync_explanation))
+            addButton(getString(R.string.timetable_sync_choose_list)) { startChoosingList(installed) }
+        }
+    }
+
+    private fun startChoosingList(installed: List<OpenTasksSync.Provider>) {
+        if (installed.size == 1) return requestSyncPermissions(installed.single())
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.timetable_sync_choose_app)
+            .setItems(installed.map { it.appName }.toTypedArray()) { _, which -> requestSyncPermissions(installed[which]) }
+            .show()
+    }
+
+    private fun requestSyncPermissions(provider: OpenTasksSync.Provider) {
+        pendingSyncProvider = provider
+        if (OpenTasksSync.hasPermissions(requireContext(), provider)) chooseTaskList(provider)
+        else syncPermissionLauncher.launch(provider.permissions)
+    }
+
+    private fun chooseTaskList(provider: OpenTasksSync.Provider) {
+        val ctx = requireContext()
+        launch {
+            val lists = withContext(Dispatchers.IO) { OpenTasksSync.lists(ctx, provider) }
+            if (!isAdded) return@launch
+            if (lists.isEmpty()) {
+                MaterialAlertDialogBuilder(ctx)
+                    .setTitle(R.string.timetable_sync_heading)
+                    .setMessage(getString(R.string.timetable_sync_no_lists, provider.appName))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+                return@launch
+            }
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(R.string.timetable_sync_choose_list)
+                .setItems(lists.map { "${it.name} (${it.account})" }.toTypedArray()) { _, which ->
+                    launch {
+                        OpenTasksSync.choose(ctx, provider, lists[which])
+                        if (isAdded) render()
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+    }
 
     private fun renderReminderSection() {
         val ctx = requireContext()

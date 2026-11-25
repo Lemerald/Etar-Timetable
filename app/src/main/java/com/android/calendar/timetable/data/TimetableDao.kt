@@ -186,4 +186,11 @@ interface TimetableDao {
     @Insert suspend fun insertChecklistItems(items: List<ChecklistItem>)
 
     @Update suspend fun updateChecklistItem(item: ChecklistItem)
+
+    // ---- Task sync links ----------------------------------------------------
+    @Query("UPDATE tasks SET remoteId = NULL, remoteModifiedAtMillis = NULL")
+    suspend fun clearRemoteLinks()
+
+    @Query("UPDATE tasks SET remoteId = :remoteId, remoteModifiedAtMillis = :remoteModified WHERE id = :taskId")
+    suspend fun linkRemote(taskId: Long, remoteId: Long, remoteModified: Long)
 }
