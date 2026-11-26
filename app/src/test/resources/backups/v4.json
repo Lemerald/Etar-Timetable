@@ -1,0 +1,11 @@
+{"format":"etar-timetable-backup","version":4,"exportedAt":1764000000000,
+ "terms":[{"id":1,"name":"Winter term","startEpochDay":20740,"endEpochDay":20860,"campusId":3}],
+ "campuses":[{"id":3,"name":"MIT","address":"77 Massachusetts Ave, Cambridge"}],
+ "buildings":[{"id":4,"campusId":3,"name":"Building A","address":"32 Vassar St"}],
+ "courses":[{"id":5,"name":"Algorithms","teacher":"Prof. X","room":"HS 1","color":-15444807,"buildingId":4}],
+ "courseTerms":[{"courseId":5,"termId":1}],
+ "regularSlots":[{"id":7,"courseId":5,"termId":1,"weekday":1,"startMinute":555,"endMinute":645}],
+ "oneTimeSlots":[],"freeDays":[],
+ "tasks":[{"id":11,"title":"Sheet 1","note":"","courseId":5,"dueAtMillis":1764000000000,"completed":false,"createdAtMillis":1,
+   "kind":0,"priority":0,"repeatRule":null,"modifiedAtMillis":5}],
+ "checklistItems":[]}

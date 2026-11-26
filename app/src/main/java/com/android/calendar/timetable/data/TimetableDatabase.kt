@@ -36,13 +36,19 @@ abstract class TimetableDatabase : RoomDatabase() {
         @Volatile
         private var instance: TimetableDatabase? = null
 
+        const val NAME = "etar_timetable.db"
+
         fun get(context: Context): TimetableDatabase =
             instance ?: synchronized(this) {
-                instance ?: Room.databaseBuilder(
-                    context.applicationContext,
-                    TimetableDatabase::class.java,
-                    "etar_timetable.db"
-                ).build().also { instance = it }
+                instance ?: builder(context, NAME).build().also { instance = it }
             }
+
+        /**
+         * The builder the app uses; migration tests open their databases with it too,
+         * so they check exactly what a user's device runs. Without a migration path
+         * Room throws instead of wiping data (no destructive fallback, on purpose).
+         */
+        fun builder(context: Context, name: String): Builder<TimetableDatabase> =
+            Room.databaseBuilder(context.applicationContext, TimetableDatabase::class.java, name)
     }
 }

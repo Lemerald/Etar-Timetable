@@ -1,0 +1,13 @@
+{"format":"etar-timetable-backup","version":2,"exportedAt":1764000000000,
+ "terms":[{"id":1,"name":"Winter term","startEpochDay":20740,"endEpochDay":20860}],
+ "courses":[{"id":5,"name":"Algorithms","teacher":"Prof. X","room":"HS 1","color":-15444807,"startEpochDay":20750,"endEpochDay":20800}],
+ "courseTerms":[{"courseId":5,"termId":1}],
+ "regularSlots":[{"id":7,"courseId":5,"termId":1,"weekday":1,"startMinute":555,"endMinute":645}],
+ "oneTimeSlots":[{"id":8,"courseId":5,"termId":1,"dateEpochDay":20800,"startMinute":840,"endMinute":960}],
+ "freeDays":[],
+ "tasks":[
+  {"id":11,"title":"Sheet 1","note":"","courseId":5,"dueAtMillis":1764000000000,"completed":false,"createdAtMillis":1,
+   "kind":0,"priority":3,"repeatRule":"FREQ=WEEKLY;INTERVAL=1","modifiedAtMillis":5},
+  {"id":12,"title":"Midterm","note":"","courseId":5,"dueAtMillis":1765000000000,"completed":false,"createdAtMillis":2,
+   "kind":1,"endAtMillis":1765005400000,"priority":0,"repeatRule":null,"modifiedAtMillis":6}],
+ "checklistItems":[{"id":1,"taskId":11,"text":"Part a","done":true,"position":0},{"id":2,"taskId":11,"text":"Part b","done":false,"position":1}]}
