@@ -986,6 +986,15 @@
     <string name="timetable_term_university_hint">Add universities under “Universities &amp; buildings” to set class locations.</string>
     <string name="timetable_no_university">No university</string>
     <string name="timetable_building">Building</string>
+    <string name="preferences_fixed_default_calendar_title">Default calendar for new events</string>
+    <string name="preferences_fixed_default_calendar_last_used">Last used calendar</string>
+    <string name="timetable_target_calendar_heading">Calendar</string>
+    <string name="timetable_target_calendar_status">Class events and task deadlines go to: %1$s</string>
+    <string name="timetable_target_calendar_change">Change calendar…</string>
+    <string name="timetable_target_calendar_own">%1$s (this device only)</string>
+    <string name="timetable_target_calendar_confirm">Move all %1$d class and deadline events to %2$s? They are removed from the current calendar and created again in the new one. Changes you made to these events directly in the calendar are lost.</string>
+    <string name="timetable_target_calendar_moving">Moving events…</string>
+    <string name="timetable_target_calendar_moved">Events moved</string>
     <string name="timetable_no_building">No building (university address)</string>
     <string name="timetable_building_same_as_course">Same as course (%1$s)</string>
     <string name="timetable_course_building_hint">Tip: add buildings under Universities to pick a default building for the course.</string>

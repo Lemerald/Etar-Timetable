@@ -255,8 +255,7 @@ public class CreateEventDialogFragment extends DialogFragment implements TextWat
         String defaultCalendar = null;
         final Activity activity = getActivity();
         if (activity != null) {
-            defaultCalendar = Utils.getSharedPreference(activity,
-                    GeneralPreferences.KEY_DEFAULT_CALENDAR, (String) null);
+            defaultCalendar = GeneralPreferences.defaultCalendarFor(activity);
         } else {
             Log.e(TAG, "Activity is null, cannot load default calendar");
         }

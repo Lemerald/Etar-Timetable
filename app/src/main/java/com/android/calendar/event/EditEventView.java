@@ -1278,8 +1278,7 @@ public class EditEventView implements View.OnClickListener, DialogInterface.OnCa
             return -1;
         }
 
-        String defaultCalendar = Utils.getSharedPreference(
-                mActivity, GeneralPreferences.KEY_DEFAULT_CALENDAR, (String) null);
+        String defaultCalendar = GeneralPreferences.defaultCalendarFor(mActivity);
 
         int calendarsOwnerIndex = calendarsCursor.getColumnIndexOrThrow(Calendars.OWNER_ACCOUNT);
         int calendarNameIndex = calendarsCursor.getColumnIndexOrThrow(Calendars.CALENDAR_DISPLAY_NAME);

@@ -78,6 +78,11 @@
             app:title="@string/preferences_default_event_duration_title"
             app:entries="@array/preferences_default_duration_labels"
             app:entryValues="@array/preferences_default_duration_values" />
+        <ListPreference
+            app:key="preferences_fixed_default_calendar"
+            app:defaultValue=""
+            app:title="@string/preferences_fixed_default_calendar_title"
+            app:useSimpleSummaryProvider="true" />
         <CheckBoxPreference
             app:key="preferences_home_tz_enabled"
             app:defaultValue="false"

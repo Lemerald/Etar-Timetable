@@ -122,9 +122,7 @@ class TimetableRepository private constructor(private val app: Application) {
             if (deleteEvents) {
                 resolver.delete(eventUri(generated.eventId), null, null)
             } else {
-                resolver.delete(extendedPropertiesUri(),
-                    "${ExtendedProperties.EVENT_ID}=? AND ${ExtendedProperties.NAME}=?",
-                    arrayOf(generated.eventId.toString(), MARKER))
+                unmarkEvent(generated.eventId)
             }
         }
         dao.deleteTerm(term)
@@ -300,8 +298,9 @@ class TimetableRepository private constructor(private val app: Application) {
             return null
         }
         val color = task.courseId?.let { cid -> dao.courses().firstOrNull { it.id == cid }?.color }
+        val calendarId = targetCalendarId()
         val values = ContentValues().apply {
-            put(Events.CALENDAR_ID, ensureTimetableCalendar())
+            put(Events.CALENDAR_ID, calendarId)
             val prefix = if (task.isExam) R.string.timetable_exam_event_prefix else R.string.timetable_task_event_prefix
             put(Events.TITLE, app.getString(prefix, task.title))
             put(Events.DESCRIPTION, task.note)
@@ -311,7 +310,7 @@ class TimetableRepository private constructor(private val app: Application) {
             put(Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
             put(Events.ALL_DAY, 0)
             put(Events.HAS_ALARM, 0)
-            if (color != null) put(Events.EVENT_COLOR_KEY, eventColorKey(color)) else putNull(Events.EVENT_COLOR_KEY)
+            putEventColor(color)
             put(Events.STATUS, Events.STATUS_CONFIRMED)
             put(Events.AVAILABILITY, Events.AVAILABILITY_BUSY)
         }
@@ -321,10 +320,11 @@ class TimetableRepository private constructor(private val app: Application) {
             setEventReminder(existingId, reminder)
             return existingId
         }
+        values.put(Events.UID_2445, newEventUid())
         val uri = resolver.insert(Events.CONTENT_URI, values) ?: return null
         val eventId = ContentUris.parseId(uri)
         setEventReminder(eventId, reminder)
-        resolver.insert(extendedPropertiesUri(), ContentValues().apply {
+        resolver.insert(extendedPropertiesUri(calendarAccount(calendarId)), ContentValues().apply {
             put(ExtendedProperties.EVENT_ID, eventId)
             put(ExtendedProperties.NAME, TASK_MARKER)
             put(ExtendedProperties.VALUE, task.id.toString())
@@ -514,11 +514,11 @@ class TimetableRepository private constructor(private val app: Application) {
 
     /** Applies a reviewed preview to the CalendarProvider and updates our bookkeeping. */
     suspend fun applyGeneration(preview: GenerationPreview) = withContext(Dispatchers.IO) {
-        val calendarId = ensureTimetableCalendar()
+        val calendarId = targetCalendarId()
         val existingByKey = dao.generatedEvents(preview.termId).associateBy { it.eventKey }
         val resolver = app.contentResolver
         val operations = ArrayList<ContentProviderOperation>()
-        val extUri = extendedPropertiesUri()
+        val extUri = extendedPropertiesUri(calendarAccount(calendarId))
 
         val eventIdByKey = HashMap<String, Long>()
         preview.toDelete.forEach { generated ->
@@ -547,7 +547,7 @@ class TimetableRepository private constructor(private val app: Application) {
         for (planned in preview.toCreate) {
             insertIndexes[planned.key] = operations.size
             operations += ContentProviderOperation.newInsert(Events.CONTENT_URI)
-                .withValues(eventValues(planned, calendarId)).build()
+                .withValues(eventValues(planned, calendarId).apply { put(Events.UID_2445, newEventUid()) }).build()
             operations += ContentProviderOperation.newInsert(extUri)
                 .withValueBackReference(ExtendedProperties.EVENT_ID, insertIndexes[planned.key]!!)
                 .withValue(ExtendedProperties.NAME, MARKER)
@@ -672,18 +672,20 @@ class TimetableRepository private constructor(private val app: Application) {
         put(Events.DTSTART, event.startMillis)
         put(Events.DTEND, event.endMillis)
         put(Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
-        put(Events.EVENT_COLOR_KEY, eventColorKey(event.color))
+        putEventColor(event.color)
         put(Events.ALL_DAY, 0)
         put(Events.HAS_ALARM, 0)
         put(Events.STATUS, Events.STATUS_CONFIRMED)
         put(Events.AVAILABILITY, Events.AVAILABILITY_BUSY)
     }
 
-    /** Course colours come from Etar's palette; map them to a colour key in the Colors table. */
-    private fun eventColorKey(color: Int): String {
-        val palette = app.resources.getIntArray(R.array.defaultCalendarColors)
-        val index = palette.indexOf(color)
-        return if (index >= 0) index.toString() else "0"
+    /**
+     * Sets the event colour directly. Colour keys only work with the Colors rows of the
+     * calendar's own account (DAVx5 has different ones), and course colours are free-form.
+     */
+    private fun ContentValues.putEventColor(color: Int?) {
+        putNull(Events.EVENT_COLOR_KEY)
+        if (color != null) put(Events.EVENT_COLOR, color) else putNull(Events.EVENT_COLOR)
     }
 
     /** The CalendarProvider requires Colors rows for an account before using a color key. */
@@ -731,8 +733,86 @@ class TimetableRepository private constructor(private val app: Application) {
         return ids
     }
 
-    private fun extendedPropertiesUri(): Uri =
-        CalendarRepository.asLocalCalendarSyncAdapter(CALENDAR_ACCOUNT, ExtendedProperties.CONTENT_URI)
+    private fun extendedPropertiesUri(account: Pair<String, String> = CALENDAR_ACCOUNT to CalendarContract.ACCOUNT_TYPE_LOCAL): Uri =
+        ExtendedProperties.CONTENT_URI.buildUpon()
+            .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+            .appendQueryParameter(Calendars.ACCOUNT_NAME, account.first)
+            .appendQueryParameter(Calendars.ACCOUNT_TYPE, account.second)
+            .build()
+
+    /** Account (name, type) owning [calendarId]; extended properties are written as its sync adapter. */
+    private fun calendarAccount(calendarId: Long): Pair<String, String> =
+        app.contentResolver.query(ContentUris.withAppendedId(Calendars.CONTENT_URI, calendarId),
+            arrayOf(Calendars.ACCOUNT_NAME, Calendars.ACCOUNT_TYPE), null, null, null)?.use {
+            if (it.moveToFirst()) it.getString(0) to it.getString(1) else null
+        } ?: (CALENDAR_ACCOUNT to CalendarContract.ACCOUNT_TYPE_LOCAL)
+
+    /** Turns one of our events into an ordinary event: marker and our UID removed. */
+    private fun unmarkEvent(eventId: Long) {
+        val resolver = app.contentResolver
+        val account = resolver.query(eventUri(eventId), arrayOf(Events.CALENDAR_ID), null, null, null)
+            ?.use { if (it.moveToFirst()) calendarAccount(it.getLong(0)) else null } ?: return
+        resolver.delete(extendedPropertiesUri(account),
+            "${ExtendedProperties.EVENT_ID}=? AND ${ExtendedProperties.NAME} IN (?, ?)",
+            arrayOf(eventId.toString(), MARKER, TASK_MARKER))
+    }
+
+    private fun newEventUid() = UID_PREFIX + java.util.UUID.randomUUID()
+
+    // ---- Target calendar --------------------------------------------------
+
+    /** A calendar the timetable can write its class and deadline events into. */
+    data class CalendarChoice(val id: Long, val name: String, val account: String, val isOwn: Boolean)
+
+    /** The app's own on-device calendar first, then all writable synced calendars. */
+    suspend fun calendarChoices(): List<CalendarChoice> = withContext(Dispatchers.IO) {
+        val own = ensureTimetableCalendar()
+        val result = mutableListOf(CalendarChoice(own, app.getString(R.string.timetable_calendar_name), "", true))
+        app.contentResolver.query(Calendars.CONTENT_URI,
+            arrayOf(Calendars._ID, Calendars.CALENDAR_DISPLAY_NAME, Calendars.ACCOUNT_NAME),
+            "${Calendars.CALENDAR_ACCESS_LEVEL}>=${Calendars.CAL_ACCESS_CONTRIBUTOR} AND ${Calendars._ID}!=?",
+            arrayOf(own.toString()), "${Calendars.ACCOUNT_NAME}, ${Calendars.CALENDAR_DISPLAY_NAME}"
+        )?.use { c ->
+            while (c.moveToNext()) result += CalendarChoice(c.getLong(0), c.getString(1).orEmpty(), c.getString(2).orEmpty(), false)
+        }
+        result
+    }
+
+    /** The calendar chosen in [calendarChoices]; falls back to the own calendar if it disappeared. */
+    private fun targetCalendarId(): Long {
+        val chosen = prefs().getLong(KEY_TARGET_CALENDAR_ID, -1L)
+        if (chosen != -1L) {
+            app.contentResolver.query(ContentUris.withAppendedId(Calendars.CONTENT_URI, chosen),
+                arrayOf(Calendars._ID), "${Calendars.CALENDAR_ACCESS_LEVEL}>=${Calendars.CAL_ACCESS_CONTRIBUTOR}",
+                null, null)?.use { if (it.moveToFirst()) return chosen }
+        }
+        return ensureTimetableCalendar()
+    }
+
+    suspend fun currentTargetCalendarId(): Long = withContext(Dispatchers.IO) { targetCalendarId() }
+
+    /** Number of calendar events the timetable currently manages (shown before moving them). */
+    suspend fun managedEventCount(): Int = withContext(Dispatchers.IO) {
+        (dao.allGeneratedEvents().map { it.eventId } + dao.allTasks().mapNotNull { it.calendarEventId }).toSet().size
+    }
+
+    /**
+     * Switches the calendar for class and deadline events: removes them from the old
+     * calendar and rebuilds them in [calendarId]. Edits made directly in the calendar are lost.
+     */
+    suspend fun moveToCalendar(calendarId: Long) = withContext(Dispatchers.IO + NonCancellable) {
+        val resolver = app.contentResolver
+        val oldEventIds = dao.allGeneratedEvents().map { it.eventId } +
+            dao.allTasks().mapNotNull { it.calendarEventId } + markedEventIds()
+        oldEventIds.toSet().forEach { resolver.delete(eventUri(it), null, null) }
+        dao.deleteAllGeneratedEvents()
+        val own = ensureTimetableCalendar()
+        prefs().edit().putLong(KEY_TARGET_CALENDAR_ID, if (calendarId == own) -1L else calendarId).apply()
+        for (term in dao.allTerms()) applyGeneration(buildPreview(term.id))
+        for (task in dao.allTasks()) saveSyncedTask(task.copy(calendarEventId = null))
+    }
+
+    private fun prefs() = app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private fun ensureTimetableCalendar(): Long {
         ensureCalendarColors()
@@ -787,6 +867,9 @@ class TimetableRepository private constructor(private val app: Application) {
         private const val CALENDAR_NAME = "etar_timetable"
         private const val PREFS_NAME = "etar_timetable_prefs"
         private const val KEY_CALENDAR_ID = "calendar_id"
+        private const val KEY_TARGET_CALENDAR_ID = "target_calendar_id"
+        /** iCalendar UID prefix of events this app creates (recognisable on the server). */
+        private const val UID_PREFIX = "etar-timetable-"
 
         @Volatile
         private var instance: TimetableRepository? = null

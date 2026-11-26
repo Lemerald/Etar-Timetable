@@ -94,6 +94,7 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         if (data.terms.isEmpty()) {
             addNote(getString(R.string.timetable_no_terms))
             renderPlacesSection()
+        renderCalendarSection()
         renderReminderSection()
         renderSyncSection()
         renderBackupSection()
@@ -234,6 +235,7 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
             }
         }
         renderPlacesSection()
+        renderCalendarSection()
         renderReminderSection()
         renderSyncSection()
         renderBackupSection()
@@ -264,6 +266,57 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
             if (granted.values.all { it }) chooseTaskList(provider)
             else toast(R.string.timetable_sync_permission_denied)
         }
+
+    /** Which calendar class events and task deadlines are written to. */
+    private fun renderCalendarSection() {
+        val ctx = requireContext()
+        addHeading(getString(R.string.timetable_target_calendar_heading))
+        val status = TextView(ctx).apply { textSize = 13f; setPadding(0, dp(4), 0, dp(4)) }
+        container.addView(status)
+        launch {
+            val choices = repository.calendarChoices()
+            val current = repository.currentTargetCalendarId()
+            if (isAdded) status.text = getString(R.string.timetable_target_calendar_status,
+                choices.firstOrNull { it.id == current }?.let(::calendarLabel) ?: "–")
+        }
+        addButton(getString(R.string.timetable_target_calendar_change)) {
+            launch {
+                val choices = repository.calendarChoices()
+                val current = repository.currentTargetCalendarId()
+                if (!isAdded) return@launch
+                MaterialAlertDialogBuilder(ctx)
+                    .setTitle(R.string.timetable_target_calendar_change)
+                    .setSingleChoiceItems(choices.map(::calendarLabel).toTypedArray(),
+                        choices.indexOfFirst { it.id == current }) { dialog, which ->
+                        dialog.dismiss()
+                        val choice = choices[which]
+                        if (choice.id != current) confirmMove(choice)
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+        }
+    }
+
+    private fun calendarLabel(choice: TimetableRepository.CalendarChoice) =
+        if (choice.isOwn) getString(R.string.timetable_target_calendar_own, choice.name)
+        else "${choice.name} (${choice.account})"
+
+    private fun confirmMove(choice: TimetableRepository.CalendarChoice) {
+        launch {
+            val count = repository.managedEventCount()
+            if (!isAdded) return@launch
+            confirm(getString(R.string.timetable_target_calendar_change),
+                getString(R.string.timetable_target_calendar_confirm, count, calendarLabel(choice))) {
+                toast(R.string.timetable_target_calendar_moving)
+                launch {
+                    // Runs NonCancellable inside, so it completes even if the screen is left.
+                    repository.moveToCalendar(choice.id)
+                    if (isAdded) { toast(R.string.timetable_target_calendar_moved); render() }
+                }
+            }
+        }
+    }
 
     private fun renderSyncSection() {
         val ctx = requireContext()

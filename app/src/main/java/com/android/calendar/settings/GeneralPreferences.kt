@@ -118,6 +118,7 @@ class GeneralPreferences : PreferenceFragmentCompat(),
         weekStartPref = preferenceScreen.findPreference(KEY_WEEK_START_DAY)!!
         dayWeekPref = preferenceScreen.findPreference(KEY_DAYS_PER_WEEK)!!
         defaultEventDurationPref = preferenceScreen.findPreference(KEY_DEFAULT_EVENT_DURATION)!!
+        buildFixedDefaultCalendarEntries(preferenceScreen.findPreference(KEY_FIXED_DEFAULT_CALENDAR)!!)
         useHomeTzPref = preferenceScreen.findPreference(KEY_HOME_TZ_ENABLED)!!
         homeTzPref = preferenceScreen.findPreference(KEY_HOME_TZ)!!
         snoozeDelayPref = preferenceScreen.findPreference(KEY_DEFAULT_SNOOZE_DELAY)!!
@@ -506,6 +507,31 @@ class GeneralPreferences : PreferenceFragmentCompat(),
         Utils.setTimeZone(activity, tzi.mTzId)
     }
 
+    /** Lists writable calendars; values use the same "owner/name" form as [KEY_DEFAULT_CALENDAR]. */
+    private fun buildFixedDefaultCalendarEntries(pref: ListPreference) {
+        val labels = mutableListOf(getString(R.string.preferences_fixed_default_calendar_last_used))
+        val values = mutableListOf("")
+        try {
+            requireContext().contentResolver.query(CalendarContract.Calendars.CONTENT_URI,
+                arrayOf(CalendarContract.Calendars.OWNER_ACCOUNT, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+                    CalendarContract.Calendars.ACCOUNT_NAME),
+                "${CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL}>=${CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR}" +
+                    " AND ${CalendarContract.Calendars.VISIBLE}=1",
+                null, "${CalendarContract.Calendars.ACCOUNT_NAME}, ${CalendarContract.Calendars.CALENDAR_DISPLAY_NAME}"
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    labels += "${c.getString(1)} (${c.getString(2)})"
+                    values += "${c.getString(0)}/${c.getString(1)}"
+                }
+            }
+        } catch (e: SecurityException) {
+            // No calendar permission yet: only "last used" is offered.
+        }
+        pref.entries = labels.toTypedArray()
+        pref.entryValues = values.toTypedArray()
+        if (pref.value != null && pref.value !in values) pref.value = ""
+    }
+
     companion object {
         // Preference keys
         const val KEY_THEME_PREF = "pref_theme"
@@ -545,6 +571,14 @@ class GeneralPreferences : PreferenceFragmentCompat(),
          */
         const val KEY_DETAILED_VIEW = "preferred_detailedView"
         const val KEY_DEFAULT_CALENDAR = "preference_defaultCalendar"
+        /** Calendar chosen in settings for new events; empty = the last used one. */
+        const val KEY_FIXED_DEFAULT_CALENDAR = "preferences_fixed_default_calendar"
+
+        /** Calendar ("owner/name") to preselect for a new event. */
+        @JvmStatic
+        fun defaultCalendarFor(context: Context): String? =
+            Utils.getSharedPreference(context, KEY_FIXED_DEFAULT_CALENDAR, "")?.takeIf { it.isNotEmpty() }
+                ?: Utils.getSharedPreference(context, KEY_DEFAULT_CALENDAR, null as String?)
 
         /** Key to preference for default new event duration (if provider doesn't indicate one)  */
         const val KEY_DEFAULT_EVENT_DURATION = "preferences_default_event_duration"
