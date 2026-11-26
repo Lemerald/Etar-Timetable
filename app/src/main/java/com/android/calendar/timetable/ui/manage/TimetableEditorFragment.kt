@@ -44,6 +44,9 @@ import com.android.calendar.timetable.io.AutoBackup
 import com.android.calendar.timetable.io.TimetableBackup
 import com.android.calendar.timetable.reminders.ReminderSettings
 import com.android.calendar.timetable.sync.OpenTasksSync
+import com.android.calendar.timetable.ui.form.FormPickers
+import com.android.calendar.timetable.ui.form.FormSheet
+import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.timepicker.MaterialTimePicker
@@ -419,24 +422,14 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         addButton(getString(R.string.timetable_add_university)) { showCampusDialog(null) }
     }
 
-    /** Address field plus a button that shows it in a maps app, to check it is found. */
-    private fun addressField(layout: LinearLayout, initial: String, hint: Int): EditText {
-        val ctx = requireContext()
-        val address = EditText(ctx).apply {
-            this.hint = getString(hint)
-            setText(initial)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_POSTAL_ADDRESS or
-                InputType.TYPE_TEXT_FLAG_MULTI_LINE
+    /** Address field plus a "check on map" button, inside a form. */
+    private fun FormSheet.addressField(initial: String, label: Int): TextInputEditText {
+        val address = text(getString(label), initial, multiline = true,
+            helper = getString(R.string.timetable_form_address_helper))
+        textButton(getString(R.string.timetable_check_on_map), R.drawable.ic_outline_place) {
+            val query = address.text.toString().trim()
+            if (query.isEmpty()) toast(R.string.timetable_form_enter_address_first) else openOnMap(query)
         }
-        layout.addView(address)
-        layout.addView(Button(ctx).apply {
-            text = getString(R.string.timetable_check_on_map)
-            setOnClickListener {
-                val query = address.text.toString().trim()
-                if (query.isEmpty()) return@setOnClickListener
-                openOnMap(query)
-            }
-        })
         return address
     }
 
@@ -457,125 +450,103 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         }
     }
 
+    private fun form(titleRes: Int, onSave: FormSheet.() -> Boolean): FormSheet {
+        lateinit var sheet: FormSheet
+        sheet = FormSheet(requireContext(), getString(titleRes)) { sheet.onSave() }
+        return sheet
+    }
+
     private fun showCampusDialog(existing: Campus?) {
-        val ctx = requireContext()
-        val layout = formLayout()
-        val name = EditText(ctx).apply {
-            hint = getString(R.string.timetable_university_name); setText(existing?.name.orEmpty())
-        }
-        layout.addView(name)
-        val address = addressField(layout, existing?.address.orEmpty(), R.string.timetable_university_address)
-        showForm(if (existing == null) R.string.timetable_add_university else R.string.timetable_edit_university, layout) {
-            if (name.text.isBlank()) { toast(R.string.timetable_name_required); false }
-            else {
-                val campus = (existing ?: Campus(name = "")).copy(
-                    name = name.text.toString().trim(), address = address.text.toString().trim())
-                launch {
-                    repository.saveCampus(campus)
-                    if (existing != null && existing.address != campus.address) toast(R.string.timetable_locations_regenerate)
-                }
-                true
+        lateinit var name: TextInputEditText
+        lateinit var address: TextInputEditText
+        val sheet = form(if (existing == null) R.string.timetable_add_university else R.string.timetable_edit_university) {
+            if (!requireText(name, getString(R.string.timetable_name_required))) return@form false
+            val campus = (existing ?: Campus(name = "")).copy(
+                name = name.text.toString().trim(), address = address.text.toString().trim())
+            launch {
+                repository.saveCampus(campus)
+                if (existing != null && existing.address != campus.address) toast(R.string.timetable_locations_regenerate)
             }
+            true
         }
+        name = sheet.text(getString(R.string.timetable_university_name), existing?.name.orEmpty(),
+            placeholder = getString(R.string.timetable_form_university_example), focus = existing == null)
+        address = sheet.addressField(existing?.address.orEmpty(), R.string.timetable_university_address)
+        sheet.note(getString(R.string.timetable_form_university_note))
+        sheet.show()
     }
 
     private fun showBuildingDialog(existing: Building?, campusId: Long) {
-        val ctx = requireContext()
-        val layout = formLayout()
-        val name = EditText(ctx).apply {
-            hint = getString(R.string.timetable_building_name); setText(existing?.name.orEmpty())
-        }
-        layout.addView(name)
-        val address = addressField(layout, existing?.address.orEmpty(), R.string.timetable_building_address)
-        showForm(if (existing == null) R.string.timetable_add_building else R.string.timetable_edit_building, layout) {
-            if (name.text.isBlank()) { toast(R.string.timetable_name_required); false }
-            else {
-                val building = (existing ?: Building(campusId = campusId, name = "")).copy(
-                    name = name.text.toString().trim(), address = address.text.toString().trim())
-                launch {
-                    repository.saveBuilding(building)
-                    if (existing != null && existing != building) toast(R.string.timetable_locations_regenerate)
-                }
-                true
+        lateinit var name: TextInputEditText
+        lateinit var address: TextInputEditText
+        val sheet = form(if (existing == null) R.string.timetable_add_building else R.string.timetable_edit_building) {
+            if (!requireText(name, getString(R.string.timetable_name_required))) return@form false
+            val building = (existing ?: Building(campusId = campusId, name = "")).copy(
+                name = name.text.toString().trim(), address = address.text.toString().trim())
+            launch {
+                repository.saveBuilding(building)
+                if (existing != null && existing != building) toast(R.string.timetable_locations_regenerate)
             }
+            true
         }
+        name = sheet.text(getString(R.string.timetable_building_name), existing?.name.orEmpty(),
+            placeholder = getString(R.string.timetable_form_building_example), focus = existing == null)
+        address = sheet.addressField(existing?.address.orEmpty(), R.string.timetable_building_address)
+        val campusName = data.campuses.firstOrNull { it.id == campusId }?.name.orEmpty()
+        sheet.note(getString(R.string.timetable_form_building_note, campusName))
+        sheet.show()
     }
 
     /**
-     * Spinner over all buildings, those of the active term's university first. Position 0
-     * is a "none" entry whose label [noneLabel] may change later (see [setNoneLabel]).
+     * Building dropdown over all buildings, those of the active term's university first.
+     * Entry 0 is "none" (relabelled to "Same as course (X)" for slots).
      */
-    private inner class BuildingPicker(noneLabel: String, initialBuildingId: Long?) {
+    private inner class BuildingPicker(sheet: FormSheet, noneLabel: String, initialBuildingId: Long?,
+                                       onChange: () -> Unit = {}) {
         private val term = data.terms.firstOrNull { it.id == activeTermId }
         private val campusNames = data.campuses.associate { it.id to it.name }
         val buildings = data.buildings.sortedWith(compareBy({ it.campusId != term?.campusId },
             { campusNames[it.campusId] }, { it.name }))
-        private val labels = mutableListOf(noneLabel).apply {
-            addAll(buildings.map {
+        val dropdown: FormSheet.Dropdown? = if (buildings.isEmpty()) null else sheet.dropdown(
+            getString(R.string.timetable_building),
+            listOf(noneLabel) + buildings.map {
                 if (it.campusId == term?.campusId) it.name else "${campusNames[it.campusId]} · ${it.name}"
-            })
-        }
-        private val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, labels)
-            .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-        val spinner = Spinner(requireContext()).apply {
-            adapter = this@BuildingPicker.adapter
-            setSelection(buildings.indexOfFirst { it.id == initialBuildingId } + 1)
-        }
+            },
+            buildings.indexOfFirst { it.id == initialBuildingId } + 1,
+        ) { onChange() }
 
-        fun buildingId(): Long? = buildings.getOrNull(spinner.selectedItemPosition - 1)?.id
-
-        fun setNoneLabel(label: String) {
-            if (labels[0] != label) { labels[0] = label; adapter.notifyDataSetChanged() }
-        }
-
-        /** Adds a label and the spinner, or nothing when there are no buildings yet. */
-        fun addTo(layout: LinearLayout) {
-            if (buildings.isEmpty()) return
-            layout.addView(TextView(requireContext()).apply { text = getString(R.string.timetable_building) })
-            layout.addView(spinner)
-        }
+        fun buildingId(): Long? = dropdown?.let { buildings.getOrNull(it.selected - 1)?.id }
+        fun setNoneLabel(label: String) { dropdown?.relabel(0, label) }
     }
 
-    private class PlaceFields(val buildingId: () -> Long?, val room: () -> String?)
+    private class PlaceFields(val buildingId: () -> Long?, val room: () -> String?, val refresh: () -> Unit)
 
     /**
-     * Building + room inputs for a slot, with a live preview of the resulting calendar
-     * location. Buildings of the term's university are listed first.
+     * "Where" section of a slot form: building + room, with a live preview of the
+     * resulting calendar location. [course] gives the currently selected course.
      */
-    private fun placeFields(
-        layout: LinearLayout, courseSpinner: Spinner, courses: List<Course>,
-        initialBuildingId: Long?, initialRoom: String?,
-    ): PlaceFields {
-        val ctx = requireContext()
-        val picker = BuildingPicker(getString(R.string.timetable_no_building), initialBuildingId)
-        val buildingSpinner = picker.spinner
-        val room = EditText(ctx).apply { setText(initialRoom.orEmpty()) }
-        val preview = TextView(ctx).apply { textSize = 12f }
-        fun buildingId() = picker.buildingId()
+    private fun FormSheet.placeFields(course: () -> Course?, initialBuildingId: Long?, initialRoom: String?): PlaceFields {
+        section(getString(R.string.timetable_form_where))
+        lateinit var refresh: () -> Unit
+        val picker = BuildingPicker(this, getString(R.string.timetable_no_building), initialBuildingId) { refresh() }
+        val room = text(getString(R.string.timetable_room), initialRoom.orEmpty(), capitalize = false)
+        val roomLayout = room.parent.parent as com.google.android.material.textfield.TextInputLayout
+        val preview = note("")
         fun roomText() = room.text.toString().trim().ifEmpty { null }
-        fun refresh() {
-            val course = courses.getOrNull(courseSpinner.selectedItemPosition)
-            val courseBuilding = data.buildings.firstOrNull { it.id == course?.buildingId }
+        refresh = {
+            val selected = course()
+            val courseBuilding = data.buildings.firstOrNull { it.id == selected?.buildingId }
             picker.setNoneLabel(courseBuilding?.let { getString(R.string.timetable_building_same_as_course, it.name) }
                 ?: getString(R.string.timetable_no_building))
-            room.hint = course?.room?.takeIf { it.isNotBlank() }
-                ?.let { getString(R.string.timetable_room_default, it) } ?: getString(R.string.timetable_room)
-            val location = course?.let { data.placeOf(activeTermId, it.id, buildingId(), roomText()).eventLocation }
+            roomLayout.helperText = selected?.room?.takeIf { it.isNotBlank() }
+                ?.let { getString(R.string.timetable_form_room_course_default, it) }
+            val location = selected?.let { data.placeOf(activeTermId, it.id, picker.buildingId(), roomText()).eventLocation }
             preview.text = getString(R.string.timetable_location_preview,
                 location?.ifEmpty { null } ?: getString(R.string.timetable_no_location))
         }
-        val listener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) = refresh()
-            override fun onNothingSelected(parent: AdapterView<*>) = Unit
-        }
-        buildingSpinner.onItemSelectedListener = listener
-        courseSpinner.onItemSelectedListener = listener
         room.doAfterTextChanged { refresh() }
-        picker.addTo(layout)
-        layout.addView(room)
-        layout.addView(preview)
         refresh()
-        return PlaceFields(::buildingId, ::roomText)
+        return PlaceFields(picker::buildingId, ::roomText, refresh)
     }
 
     private fun renderReminderSection() {
@@ -736,248 +707,237 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
 
     // ---- Dialog forms -----------------------------------------------------
     private fun showTermDialog(existing: Term?) {
-        val ctx = requireContext()
-        val layout = formLayout()
-        val name = EditText(ctx).apply { hint = getString(R.string.timetable_term_name); setText(existing?.name.orEmpty()) }
         var start = existing?.startDate ?: LocalDate.now()
         var end = existing?.endDate ?: LocalDate.now().plusMonths(4)
-        val startButton = Button(ctx).apply {
-            text = ctx.getString(R.string.timetable_start_date) + ": " + start.format(DATE_FORMAT)
-            setOnClickListener { pickDate(start) { picked -> start = picked; text = ctx.getString(R.string.timetable_start_date) + ": " + picked.format(DATE_FORMAT) } }
-        }
-        val endButton = Button(ctx).apply {
-            text = ctx.getString(R.string.timetable_end_date) + ": " + end.format(DATE_FORMAT)
-            setOnClickListener { pickDate(end) { picked -> end = picked; text = ctx.getString(R.string.timetable_end_date) + ": " + picked.format(DATE_FORMAT) } }
-        }
-        layout.addView(name); layout.addView(startButton); layout.addView(endButton)
+        lateinit var name: TextInputEditText
+        lateinit var endPicker: FormSheet.Picker
+        var campus: FormSheet.Dropdown? = null
         val campuses = data.campuses
-        val campusSpinner = Spinner(ctx).apply {
-            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item,
-                listOf(getString(R.string.timetable_no_university)) + campuses.map { it.name }).also {
-                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            }
-            setSelection(campuses.indexOfFirst { it.id == existing?.campusId } + 1)
-        }
-        layout.addView(TextView(ctx).apply { text = getString(R.string.timetable_term_university) })
-        layout.addView(campusSpinner)
-        if (campuses.isEmpty()) layout.addView(TextView(ctx).apply {
-            text = getString(R.string.timetable_term_university_hint)
-            textSize = 12f
-        })
-        fun selectedCampusId() = campuses.getOrNull(campusSpinner.selectedItemPosition - 1)?.id
-
-        showForm(if (existing == null) R.string.timetable_new_term else R.string.timetable_edit_term, layout) {
-            when {
-                name.text.isBlank() -> { toast(R.string.timetable_name_required); false }
-                end.isBefore(start) -> { toast(R.string.timetable_invalid_range); false }
-                else -> {
-                    launch {
-                        if (existing == null) {
-                            val id = repository.addTerm(name.text.toString(), start, end)
-                            activeTermId = id
-                            selectedCampusId()?.let { campusId ->
-                                repository.updateTerm(Term(id, name.text.toString(), start.toEpochDay(),
-                                    end.toEpochDay(), campusId))
-                            }
-                        } else {
-                            repository.updateTerm(existing.copy(name = name.text.toString(),
-                                startEpochDay = start.toEpochDay(), endEpochDay = end.toEpochDay(),
-                                campusId = selectedCampusId()))
-                            if (existing.campusId != selectedCampusId()) toast(R.string.timetable_locations_regenerate)
-                        }
+        fun selectedCampusId() = campus?.let { campuses.getOrNull(it.selected - 1)?.id }
+        val sheet = form(if (existing == null) R.string.timetable_new_term else R.string.timetable_edit_term) {
+            if (!requireText(name, getString(R.string.timetable_name_required))) return@form false
+            if (end.isBefore(start)) { endPicker.setError(getString(R.string.timetable_invalid_range)); return@form false }
+            launch {
+                if (existing == null) {
+                    val id = repository.addTerm(name.text.toString().trim(), start, end)
+                    activeTermId = id
+                    selectedCampusId()?.let { campusId ->
+                        repository.updateTerm(Term(id, name.text.toString().trim(), start.toEpochDay(),
+                            end.toEpochDay(), campusId))
                     }
-                    true
+                } else {
+                    repository.updateTerm(existing.copy(name = name.text.toString().trim(),
+                        startEpochDay = start.toEpochDay(), endEpochDay = end.toEpochDay(),
+                        campusId = selectedCampusId()))
+                    if (existing.campusId != selectedCampusId()) toast(R.string.timetable_locations_regenerate)
                 }
             }
+            true
         }
+        name = sheet.text(getString(R.string.timetable_term_name), existing?.name.orEmpty(),
+            placeholder = getString(R.string.timetable_form_term_example), focus = existing == null)
+        sheet.section(getString(R.string.timetable_form_dates))
+        sheet.row {
+            sheet.picker(getString(R.string.timetable_start_date), R.drawable.ic_baseline_calendar_today,
+                FormPickers.formatDate(start)) { p ->
+                pickDate(start) { start = it; p.value = FormPickers.formatDate(it) }
+            }
+            endPicker = sheet.picker(getString(R.string.timetable_end_date), null, FormPickers.formatDate(end)) { p ->
+                pickDate(end) { end = it; p.value = FormPickers.formatDate(it); p.setError(null) }
+            }
+        }
+        sheet.section(getString(R.string.timetable_term_university))
+        if (campuses.isEmpty()) {
+            sheet.note(getString(R.string.timetable_term_university_hint))
+        } else {
+            campus = sheet.dropdown(getString(R.string.timetable_term_university),
+                listOf(getString(R.string.timetable_no_university)) + campuses.map { it.name },
+                campuses.indexOfFirst { it.id == existing?.campusId } + 1,
+                helper = getString(R.string.timetable_form_term_university_helper))
+        }
+        sheet.show()
     }
 
     private fun showCourseDialog(existing: Course?) {
-        val ctx = requireContext()
-        val layout = formLayout()
-        val name = EditText(ctx).apply { hint = getString(R.string.timetable_course_name); setText(existing?.name.orEmpty()) }
-        val teacher = EditText(ctx).apply { hint = getString(R.string.timetable_teacher); setText(existing?.teacher.orEmpty()) }
-        val room = EditText(ctx).apply { hint = getString(R.string.timetable_course_default_room); setText(existing?.room.orEmpty()) }
-        val usedColors = data.courses.map { it.color }.toSet()
-        val colorPicker = ColorPicker(existing?.color ?: COURSE_COLORS.firstOrNull { it !in usedColors } ?: COURSE_COLORS[0])
-        val buildingPicker = BuildingPicker(getString(R.string.timetable_no_building), existing?.buildingId)
-        layout.addView(name); layout.addView(teacher)
-        buildingPicker.addTo(layout)
-        layout.addView(room)
-        if (buildingPicker.buildings.isEmpty()) addHint(layout, getString(R.string.timetable_course_building_hint))
-        layout.addView(TextView(ctx).apply { text = getString(R.string.timetable_color); setPadding(0, dp(12), 0, dp(4)) })
-        layout.addView(colorPicker.view)
-
-        // Optional date range, e.g. a block course that only meets for a few weeks.
+        lateinit var name: TextInputEditText
+        lateinit var teacher: TextInputEditText
+        lateinit var room: TextInputEditText
+        lateinit var colorPicker: ColorPicker
+        lateinit var buildingPicker: BuildingPicker
+        lateinit var limited: com.google.android.material.materialswitch.MaterialSwitch
+        lateinit var lastDayPicker: FormSheet.Picker
         val term = data.terms.firstOrNull { it.id == activeTermId }
         var rangeStart = existing?.startEpochDay?.let(LocalDate::ofEpochDay) ?: term?.startDate ?: LocalDate.now()
         var rangeEnd = existing?.endEpochDay?.let(LocalDate::ofEpochDay) ?: term?.endDate ?: rangeStart.plusWeeks(6)
-        val limited = CheckBox(ctx).apply {
-            text = getString(R.string.timetable_course_limited)
-            isChecked = existing?.startEpochDay != null || existing?.endEpochDay != null
-        }
-        val startButton = Button(ctx)
-        val endButton = Button(ctx)
-        fun refreshRange() {
-            startButton.text = getString(R.string.timetable_course_first_day, rangeStart.format(DATE_FORMAT))
-            endButton.text = getString(R.string.timetable_course_last_day, rangeEnd.format(DATE_FORMAT))
-            val visibility = if (limited.isChecked) View.VISIBLE else View.GONE
-            startButton.visibility = visibility
-            endButton.visibility = visibility
-        }
-        refreshRange()
-        limited.setOnCheckedChangeListener { _, _ -> refreshRange() }
-        startButton.setOnClickListener { pickDate(rangeStart) { rangeStart = it; refreshRange() } }
-        endButton.setOnClickListener { pickDate(rangeEnd) { rangeEnd = it; refreshRange() } }
-        layout.addView(limited); layout.addView(startButton); layout.addView(endButton)
 
-        showForm(if (existing == null) R.string.timetable_new_course else R.string.timetable_edit_course, layout) {
-            if (name.text.isBlank()) { toast(R.string.timetable_name_required); false }
-            else if (limited.isChecked && rangeEnd.isBefore(rangeStart)) { toast(R.string.timetable_end_before_start); false }
-            else {
-                val start = if (limited.isChecked) rangeStart.toEpochDay() else null
-                val end = if (limited.isChecked) rangeEnd.toEpochDay() else null
-                val course = (existing ?: Course(name = "")).copy(name = name.text.toString(),
-                    teacher = teacher.text.toString(), room = room.text.toString(),
-                    color = colorPicker.selected, startEpochDay = start, endEpochDay = end,
-                    buildingId = buildingPicker.buildingId())
-                launch {
-                    if (existing == null) repository.addCourse(course) else repository.updateCourse(course)
-                    if (existing != null && (existing.buildingId != course.buildingId || existing.room != course.room)) {
-                        toast(R.string.timetable_locations_regenerate)
-                    }
+        val sheet = form(if (existing == null) R.string.timetable_new_course else R.string.timetable_edit_course) {
+            if (!requireText(name, getString(R.string.timetable_name_required))) return@form false
+            if (limited.isChecked && rangeEnd.isBefore(rangeStart)) {
+                lastDayPicker.setError(getString(R.string.timetable_end_before_start)); return@form false
+            }
+            val course = (existing ?: Course(name = "")).copy(name = name.text.toString().trim(),
+                teacher = teacher.text.toString().trim(), room = room.text.toString().trim(),
+                color = colorPicker.selected,
+                startEpochDay = if (limited.isChecked) rangeStart.toEpochDay() else null,
+                endEpochDay = if (limited.isChecked) rangeEnd.toEpochDay() else null,
+                buildingId = buildingPicker.buildingId())
+            launch {
+                if (existing == null) repository.addCourse(course) else repository.updateCourse(course)
+                if (existing != null && (existing.buildingId != course.buildingId || existing.room != course.room)) {
+                    toast(R.string.timetable_locations_regenerate)
                 }
-                true
+            }
+            true
+        }
+        name = sheet.text(getString(R.string.timetable_course_name), existing?.name.orEmpty(),
+            placeholder = getString(R.string.timetable_form_course_example), focus = existing == null)
+        teacher = sheet.text(getString(R.string.timetable_teacher), existing?.teacher.orEmpty(),
+            helper = getString(R.string.timetable_form_optional))
+
+        sheet.section(getString(R.string.timetable_form_where))
+        buildingPicker = BuildingPicker(sheet, getString(R.string.timetable_no_building), existing?.buildingId)
+        room = sheet.text(getString(R.string.timetable_room), existing?.room.orEmpty(), capitalize = false,
+            helper = getString(R.string.timetable_form_course_room_helper))
+        if (buildingPicker.buildings.isEmpty()) sheet.note(getString(R.string.timetable_course_building_hint))
+
+        sheet.section(getString(R.string.timetable_color))
+        val usedColors = data.courses.filter { it.id != existing?.id }.map { it.color }.toSet()
+        colorPicker = ColorPicker(existing?.color ?: COURSE_COLORS.firstOrNull { it !in usedColors } ?: COURSE_COLORS[0])
+        colorPicker.view.setPadding(0, sheet.dp(8), 0, 0)
+        sheet.add(colorPicker.view)
+
+        // Optional date range, e.g. a block course that only meets for a few weeks.
+        sheet.section(getString(R.string.timetable_form_course_period))
+        lateinit var rangeRow: View
+        limited = sheet.switch(getString(R.string.timetable_course_limited),
+            existing?.startEpochDay != null || existing?.endEpochDay != null) { on ->
+            rangeRow.visibility = if (on) View.VISIBLE else View.GONE
+        }
+        rangeRow = sheet.row {
+            sheet.picker(getString(R.string.timetable_form_first_day), R.drawable.ic_baseline_calendar_today,
+                FormPickers.formatDate(rangeStart)) { p ->
+                pickDate(rangeStart) { rangeStart = it; p.value = FormPickers.formatDate(it) }
+            }
+            lastDayPicker = sheet.picker(getString(R.string.timetable_form_last_day), null,
+                FormPickers.formatDate(rangeEnd)) { p ->
+                pickDate(rangeEnd) { rangeEnd = it; p.value = FormPickers.formatDate(it); p.setError(null) }
             }
         }
+        rangeRow.visibility = if (limited.isChecked) View.VISIBLE else View.GONE
+        sheet.show()
+    }
+
+    /** Course dropdown for slot forms; returns it and a getter for the selected course. */
+    private fun FormSheet.courseDropdown(courses: List<Course>, selectedId: Long?, onChange: () -> Unit): FormSheet.Dropdown =
+        dropdown(getString(R.string.timetable_form_course), courses.map { it.name },
+            courses.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)) { onChange() }
+
+    /** Start and end time side by side; [times] holds and receives the minutes. */
+    private fun FormSheet.timeRow(times: IntArray): FormSheet.Picker {
+        lateinit var endPicker: FormSheet.Picker
+        row {
+            picker(getString(R.string.timetable_start_time), R.drawable.ic_form_schedule,
+                FormPickers.formatTime(times[0])) { p ->
+                pickTime(times[0], R.string.timetable_start_time) { picked ->
+                    // Keep the duration when the start moves.
+                    val duration = times[1] - times[0]
+                    times[0] = picked
+                    p.value = FormPickers.formatTime(picked)
+                    if (duration > 0 && picked + duration < 24 * 60) {
+                        times[1] = picked + duration
+                        endPicker.value = FormPickers.formatTime(times[1])
+                    }
+                    endPicker.setError(null)
+                }
+            }
+            endPicker = picker(getString(R.string.timetable_end_time), null, FormPickers.formatTime(times[1])) { p ->
+                pickTime(times[1], R.string.timetable_end_time) { picked ->
+                    times[1] = picked; p.value = FormPickers.formatTime(picked); p.setError(null)
+                }
+            }
+        }
+        return endPicker
     }
 
     private fun showRegularSlotDialog(existing: RegularSlot?, linkedIds: Set<Long>) {
         if (linkedIds.isEmpty()) { toast(R.string.timetable_no_courses_in_term); return }
-        val ctx = requireContext()
-        val layout = formLayout()
         val courses = data.courses.filter { it.id in linkedIds }
-        val (courseSpinner, _, weekdaySpinner, startButton, endButton) = slotFields(
-            courses, existing?.courseId, existing?.weekday ?: 1,
-            existing?.startMinute ?: 9 * 60, existing?.endMinute ?: 10 * 60
-        )
-        layout.addView(courseSpinner); layout.addView(weekdaySpinner)
-        layout.addView(startButton); layout.addView(endButton)
-        val place = placeFields(layout, courseSpinner, courses, existing?.buildingId, existing?.room)
+        val times = intArrayOf(existing?.startMinute ?: 9 * 60, existing?.endMinute ?: 10 * 60 + 30)
+        lateinit var course: FormSheet.Dropdown
+        lateinit var days: FormSheet.Segments
+        lateinit var endPicker: FormSheet.Picker
+        lateinit var place: PlaceFields
+        lateinit var dayError: TextView
 
-        showForm(if (existing == null) R.string.timetable_add_regular_slot else R.string.timetable_edit_slot, layout) {
-            val start = startButton.tag as Int
-            val end = endButton.tag as Int
-            if (end <= start) { toast(R.string.timetable_invalid_time); false }
-            else {
-                launch {
-                    val courseId = courses[courseSpinner.selectedItemPosition].id
-                    val slot = RegularSlot(
-                        id = existing?.id ?: 0, courseId = courseId, termId = activeTermId,
-                        weekday = weekdaySpinner.selectedItemPosition + 1,
-                        startMinute = start, endMinute = end,
-                        buildingId = place.buildingId(), room = place.room(),
-                    )
-                    if (existing == null) repository.addRegularSlot(slot)
-                    else repository.updateRegularSlot(slot)
+        val sheet = form(if (existing == null) R.string.timetable_add_regular_slot else R.string.timetable_edit_slot) {
+            val selectedDays = days.selected.map { it + 1 }.sorted()
+            if (selectedDays.isEmpty()) { dayError.visibility = View.VISIBLE; return@form false }
+            if (times[1] <= times[0]) { endPicker.setError(getString(R.string.timetable_invalid_time)); return@form false }
+            val courseId = courses[course.selected].id
+            launch {
+                selectedDays.forEachIndexed { index, weekday ->
+                    // Editing: the first chosen day updates this slot, further days add new ones.
+                    val id = if (index == 0) existing?.id ?: 0 else 0
+                    val slot = RegularSlot(id = id, courseId = courseId, termId = activeTermId,
+                        weekday = weekday, startMinute = times[0], endMinute = times[1],
+                        buildingId = place.buildingId(), room = place.room())
+                    if (id == 0L) repository.addRegularSlot(slot) else repository.updateRegularSlot(slot)
                 }
-                true
             }
+            true
         }
+        course = sheet.courseDropdown(courses, existing?.courseId) { place.refresh() }
+        sheet.section(getString(R.string.timetable_form_when))
+        val defaultDay = existing?.weekday ?: LocalDate.now().dayOfWeek.value.coerceAtMost(5)
+        days = sheet.segments(DayOfWeek.entries.map {
+            it.getDisplayName(TextStyle.SHORT_STANDALONE, Locale.getDefault()).take(2)
+        }, setOf(defaultDay - 1), multi = true) { dayError.visibility = View.GONE }
+        dayError = sheet.note(getString(R.string.timetable_form_pick_day)).apply {
+            setTextColor(com.google.android.material.color.MaterialColors.getColor(this,
+                androidx.appcompat.R.attr.colorError))
+            visibility = View.GONE
+        }
+        if (existing == null) sheet.note(getString(R.string.timetable_form_days_hint))
+        endPicker = sheet.timeRow(times)
+        place = sheet.placeFields({ courses.getOrNull(course.selected) }, existing?.buildingId, existing?.room)
+        sheet.show()
     }
 
     private fun showOneTimeSlotDialog(existing: OneTimeSlot?, linkedIds: Set<Long>) {
         if (linkedIds.isEmpty()) { toast(R.string.timetable_no_courses_in_term); return }
-        val ctx = requireContext()
-        val layout = formLayout()
         val courses = data.courses.filter { it.id in linkedIds }
         var date = existing?.date ?: LocalDate.now()
-        val (courseSpinner, dateButton, _, startButton, endButton) = slotFields(
-            courses, existing?.courseId, 1, existing?.startMinute ?: 9 * 60,
-            existing?.endMinute ?: 10 * 60
-        )
-        dateButton.visibility = View.VISIBLE
-        dateButton.text = getString(R.string.timetable_date) + ": " + date.format(DATE_FORMAT)
-        dateButton.setOnClickListener { pickDate(date) { picked -> date = picked; dateButton.text = getString(R.string.timetable_date) + ": " + picked.format(DATE_FORMAT) } }
-        layout.addView(courseSpinner); layout.addView(dateButton)
-        layout.addView(startButton); layout.addView(endButton)
-        val place = placeFields(layout, courseSpinner, courses, existing?.buildingId, existing?.room)
+        val times = intArrayOf(existing?.startMinute ?: 9 * 60, existing?.endMinute ?: 10 * 60 + 30)
+        lateinit var course: FormSheet.Dropdown
+        lateinit var endPicker: FormSheet.Picker
+        lateinit var place: PlaceFields
 
-        showForm(if (existing == null) R.string.timetable_add_one_time_slot else R.string.timetable_edit_slot, layout) {
-            val start = startButton.tag as Int
-            val end = endButton.tag as Int
-            if (end <= start) { toast(R.string.timetable_invalid_time); false }
-            else {
-                launch {
-                    val slot = OneTimeSlot(
-                        id = existing?.id ?: 0,
-                        courseId = courses[courseSpinner.selectedItemPosition].id,
-                        termId = activeTermId, dateEpochDay = date.toEpochDay(),
-                        startMinute = start, endMinute = end,
-                        buildingId = place.buildingId(), room = place.room(),
-                    )
-                    if (existing == null) repository.addOneTimeSlot(slot)
-                    else repository.updateOneTimeSlot(slot)
-                }
-                true
+        val sheet = form(if (existing == null) R.string.timetable_add_one_time_slot else R.string.timetable_edit_slot) {
+            if (times[1] <= times[0]) { endPicker.setError(getString(R.string.timetable_invalid_time)); return@form false }
+            launch {
+                val slot = OneTimeSlot(id = existing?.id ?: 0, courseId = courses[course.selected].id,
+                    termId = activeTermId, dateEpochDay = date.toEpochDay(),
+                    startMinute = times[0], endMinute = times[1],
+                    buildingId = place.buildingId(), room = place.room())
+                if (existing == null) repository.addOneTimeSlot(slot) else repository.updateOneTimeSlot(slot)
             }
+            true
         }
+        course = sheet.courseDropdown(courses, existing?.courseId) { place.refresh() }
+        sheet.section(getString(R.string.timetable_form_when))
+        sheet.picker(getString(R.string.timetable_date), R.drawable.ic_baseline_calendar_today,
+            FormPickers.formatDate(date)) { p ->
+            pickDate(date) { date = it; p.value = FormPickers.formatDate(it) }
+        }
+        endPicker = sheet.timeRow(times)
+        place = sheet.placeFields({ courses.getOrNull(course.selected) }, existing?.buildingId, existing?.room)
+        sheet.show()
     }
 
     private fun showFreeDayDialog(termId: Long) {
-        val ctx = requireContext()
-        var date = LocalDate.now()
-        val button = Button(ctx).apply {
-            text = getString(R.string.timetable_date) + ": " + date.format(DATE_FORMAT)
-            setOnClickListener { pickDate(date) { picked -> date = picked; text = getString(R.string.timetable_date) + ": " + picked.format(DATE_FORMAT) } }
-        }
-        val layout = formLayout().apply { addView(button) }
-        showForm(R.string.timetable_add_free_day, layout) {
+        // A free day is just a date: go straight to the date picker.
+        pickDate(LocalDate.now(), R.string.timetable_add_free_day) { date ->
             launch { repository.addFreeDay(termId, date); toast(R.string.timetable_free_day_added) }
-            true
-        }
-    }
-
-    /** Shared fields for regular and one-off slot dialogs. */
-    private fun slotFields(
-        courses: List<Course>, selectedCourseId: Long?, weekday: Int, start: Int, end: Int,
-    ): Fields {
-        val ctx = requireContext()
-        val courseSpinner = Spinner(ctx).apply {
-            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, courses.map { it.name }).also {
-                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            }
-            if (selectedCourseId != null) {
-                setSelection(courses.indexOfFirst { it.id == selectedCourseId }.coerceAtLeast(0))
-            }
-        }
-        val weekdaySpinner = Spinner(ctx).apply {
-            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item,
-                DayOfWeek.entries.map { it.getDisplayName(TextStyle.FULL, Locale.getDefault()) }).also {
-                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            }
-            setSelection(weekday - 1)
-        }
-        val dateButton = Button(ctx).apply { visibility = View.GONE }
-        val startButton = timeButton(R.string.timetable_start_time, start)
-        val endButton = timeButton(R.string.timetable_end_time, end)
-        return Fields(courseSpinner, dateButton, weekdaySpinner, startButton, endButton)
-    }
-
-    private data class Fields(
-        val courseSpinner: Spinner,
-        val dateButton: Button,
-        val weekdaySpinner: Spinner,
-        val startButton: Button,
-        val endButton: Button,
-    )
-
-    private fun timeButton(labelRes: Int, minute: Int): Button = Button(requireContext()).apply {
-        tag = minute
-        fun update() { text = "${getString(labelRes)}: ${minutesToTime(tag as Int)}" }
-        update()
-        setOnClickListener {
-            pickTime(tag as Int) { picked -> tag = picked; update() }
         }
     }
 
@@ -1003,19 +963,6 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
     }
 
     // ---- Small UI helpers -------------------------------------------------
-    private fun showForm(titleRes: Int, content: View, onSave: () -> Boolean) {
-        val dialog = MaterialAlertDialogBuilder(requireContext())
-            .setTitle(titleRes)
-            .setView(content)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(android.R.string.ok, null)
-            .create()
-        dialog.show()
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            if (onSave()) dialog.dismiss()
-        }
-    }
-
     private fun confirm(title: String, message: String, onYes: () -> Unit) {
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(title)
@@ -1025,27 +972,11 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
             .show()
     }
 
-    private fun pickDate(initial: LocalDate, onPicked: (LocalDate) -> Unit) {
-        val picker = MaterialDatePicker.Builder.datePicker()
-            .setTitleText(R.string.timetable_date)
-            .setSelection(initial.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
-            .build()
-        picker.addOnPositiveButtonClickListener { millis ->
-            onPicked(Instant.ofEpochMilli(millis).atOffset(ZoneOffset.UTC).toLocalDate())
-        }
-        picker.show(parentFragmentManager, "timetable_date")
-    }
+    private fun pickDate(initial: LocalDate, titleRes: Int = R.string.timetable_date, onPicked: (LocalDate) -> Unit) =
+        FormPickers.pickDate(parentFragmentManager, getString(titleRes), initial, onPicked)
 
-    private fun pickTime(initialMinute: Int, onPicked: (Int) -> Unit) {
-        val picker = MaterialTimePicker.Builder()
-            .setTimeFormat(TimeFormat.CLOCK_24H)
-            .setHour(initialMinute / 60)
-            .setMinute(initialMinute % 60)
-            .setTitleText(R.string.timetable_start_time)
-            .build()
-        picker.addOnPositiveButtonClickListener { onPicked(picker.hour * 60 + picker.minute) }
-        picker.show(parentFragmentManager, "timetable_time")
-    }
+    private fun pickTime(initialMinute: Int, titleRes: Int = R.string.timetable_start_time, onPicked: (Int) -> Unit) =
+        FormPickers.pickTime(parentFragmentManager, getString(titleRes), initialMinute, onPicked)
 
     /** Grid of colour swatches; the selected one gets a ring. */
     private inner class ColorPicker(initial: Int) {
@@ -1061,16 +992,18 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
                 val line = row()
                 chunk.forEach { color ->
                     val swatch = View(requireContext()).apply {
-                        layoutParams = LinearLayout.LayoutParams(0, dp(40), 1f).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
+                        layoutParams = android.widget.FrameLayout.LayoutParams(dp(40), dp(40), Gravity.CENTER)
                         tag = color
                         contentDescription = String.format("#%06X", color and 0xFFFFFF)
                         setOnClickListener { selected = color; refresh() }
                     }
                     swatches += swatch
-                    line.addView(swatch)
+                    // Equal-width cells keep the circles round and evenly spread.
+                    line.addView(android.widget.FrameLayout(requireContext()).apply { addView(swatch) },
+                        LinearLayout.LayoutParams(0, dp(52), 1f))
                 }
                 repeat(6 - chunk.size) {
-                    line.addView(View(requireContext()), LinearLayout.LayoutParams(0, dp(40), 1f).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) })
+                    line.addView(View(requireContext()), LinearLayout.LayoutParams(0, dp(52), 1f))
                 }
                 view.addView(line)
             }
@@ -1090,14 +1023,7 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         }
     }
 
-    private fun addHint(layout: LinearLayout, text: String) {
-        layout.addView(TextView(requireContext()).apply { this.text = text; textSize = 12f })
-    }
 
-    private fun formLayout() = LinearLayout(requireContext()).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(20))
-    }
 
     private fun row() = LinearLayout(requireContext()).apply {
         orientation = LinearLayout.HORIZONTAL
