@@ -15,6 +15,9 @@ interface TimetableDao {
     @Query("SELECT * FROM terms ORDER BY startEpochDay DESC, name")
     fun observeTerms(): Flow<List<Term>>
 
+    @Query("SELECT eventId FROM generated_events")
+    fun observeGeneratedEventIds(): Flow<List<Long>>
+
     @Query("SELECT * FROM courses ORDER BY name")
     fun observeCourses(): Flow<List<Course>>
 

@@ -856,6 +856,10 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
         if (item != null) {
             item.setVisible(true);
         }
+        MenuItem showClasses = menu.findItem(R.id.action_show_classes);
+        if (showClasses != null) {
+            showClasses.setChecked(com.android.calendar.timetable.ClassEventFilter.showClasses());
+        }
 
         mSearchMenu = menu.findItem(R.id.action_search);
         mSearchView = (SearchView) menu.findItem(R.id.action_search).getActionView();
@@ -949,6 +953,12 @@ public class AllInOneActivity extends AbstractCalendarActivity implements EventH
         final int itemId = item.getItemId();
         if (itemId == R.id.action_refresh) {
             mController.refreshCalendars();
+            return true;
+        } else if (itemId == R.id.action_show_classes) {
+            boolean show = !item.isChecked();
+            item.setChecked(show);
+            com.android.calendar.timetable.ClassEventFilter.setShowClasses(this, show);
+            eventsChanged();
             return true;
         } else if (itemId == R.id.action_today) {
             t = new Time(mTimeZone);

@@ -75,6 +75,13 @@
         app:actionViewClass="androidx.appcompat.widget.SearchView"
         app:showAsAction="never|collapseActionView" />
     <item
+        android:id="@+id/action_show_classes"
+        android:checkable="true"
+        android:checked="true"
+        android:orderInCategory="6"
+        android:title="@string/timetable_show_classes"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/action_import"
         android:alphabeticShortcut="i"
         android:title="@string/cal_import_menu_title"

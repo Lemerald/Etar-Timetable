@@ -213,6 +213,10 @@ public class AgendaAdapter extends ResourceCursorAdapter {
 
         // Where
         String whereString = cursor.getString(AgendaWindowAdapter.INDEX_EVENT_LOCATION);
+        if (com.android.calendar.timetable.ClassEventFilter.isClassEvent(
+                cursor.getLong(AgendaWindowAdapter.INDEX_EVENT_ID))) {
+            whereString = null; // timetable class: title only
+        }
         if (whereString != null && whereString.length() > 0) {
             where.setVisibility(View.VISIBLE);
             where.setText(whereString);

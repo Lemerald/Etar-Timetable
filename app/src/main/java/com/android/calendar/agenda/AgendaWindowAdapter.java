@@ -701,12 +701,13 @@ public class AgendaWindowAdapter extends BaseAdapter
     private String buildQuerySelection() {
         // Respect the preference to show/hide declined events
 
+        String classes = com.android.calendar.timetable.ClassEventFilter.instancesExclusion();
         if (mHideDeclined) {
             return Calendars.VISIBLE + "=1 AND "
                     + Instances.SELF_ATTENDEE_STATUS + "!="
-                    + Attendees.ATTENDEE_STATUS_DECLINED;
+                    + Attendees.ATTENDEE_STATUS_DECLINED + classes;
         } else {
-            return Calendars.VISIBLE + "=1";
+            return Calendars.VISIBLE + "=1" + classes;
         }
     }
 

@@ -988,6 +988,7 @@
     <string name="timetable_building">Building</string>
     <string name="preferences_fixed_default_calendar_title">Default calendar for new events</string>
     <string name="preferences_fixed_default_calendar_last_used">Last used calendar</string>
+    <string name="timetable_show_classes">Show classes</string>
     <string name="timetable_target_calendar_heading">Calendar</string>
     <string name="timetable_target_calendar_status">Class events and task deadlines go to: %1$s</string>
     <string name="timetable_target_calendar_change">Change calendar…</string>

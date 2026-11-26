@@ -19,6 +19,8 @@ package com.android.calendar;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.Context;
+
+import com.android.calendar.timetable.ClassEventFilter;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.database.Cursor;
@@ -329,6 +331,13 @@ public class Event implements Cloneable {
             Event e = generateEventFromCursor(cEvents, context);
             if (e.startDay > endDay || e.endDay < startDay) {
                 continue;
+            }
+            // Timetable classes: optionally hidden, otherwise shown without their address.
+            if (ClassEventFilter.isHidden(e.id)) {
+                continue;
+            }
+            if (ClassEventFilter.isClassEvent(e.id)) {
+                e.location = null;
             }
             events.add(e);
         }
