@@ -910,7 +910,6 @@
     <string name="todo_due_day_before">Day before class · %1$s</string>
     <string name="todo_due_other_meeting">Another class meeting…</string>
     <string name="todo_pick_meeting">Choose class meeting</string>
-    <string name="timetable_color_n">Colour %1$d</string>
     <string name="todo_kind_task">Task</string>
     <string name="todo_kind_exam">Exam</string>
     <string name="todo_exam_date">Date</string>
@@ -988,6 +987,8 @@
     <string name="timetable_no_university">No university</string>
     <string name="timetable_building">Building</string>
     <string name="timetable_no_building">No building (university address)</string>
+    <string name="timetable_building_same_as_course">Same as course (%1$s)</string>
+    <string name="timetable_course_building_hint">Tip: add buildings under Universities to pick a default building for the course.</string>
     <string name="timetable_room">Room</string>
     <string name="timetable_room_default">Room (default: %1$s)</string>
     <string name="timetable_location_preview">Calendar location: %1$s</string>

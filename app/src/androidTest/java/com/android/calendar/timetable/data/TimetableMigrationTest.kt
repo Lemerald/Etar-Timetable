@@ -101,4 +101,28 @@ class TimetableMigrationTest {
             db.close()
         }
     }
+
+    @Test
+    fun migrate4To5KeepsData() {
+        helper.createDatabase(dbName, 4).apply {
+            execSQL("INSERT INTO courses (id, name, teacher, room, color) VALUES (5, 'Algorithms', 'X', 'HS 1', -15444807)")
+            close()
+        }
+
+        helper.runMigrationsAndValidate(dbName, 5, true).close()
+
+        val db = Room.databaseBuilder(
+            InstrumentationRegistry.getInstrumentation().targetContext,
+            TimetableDatabase::class.java, dbName,
+        ).build()
+        try {
+            runBlocking {
+                val course = db.timetableDao().courses().single()
+                assertEquals("HS 1", course.room)
+                assertNull(course.buildingId)
+            }
+        } finally {
+            db.close()
+        }
+    }
 }

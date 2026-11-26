@@ -381,14 +381,27 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
             setOnClickListener {
                 val query = address.text.toString().trim()
                 if (query.isEmpty()) return@setOnClickListener
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(query))))
-                } catch (e: ActivityNotFoundException) {
-                    toast(R.string.timetable_no_maps_app)
-                }
+                openOnMap(query)
             }
         })
         return address
+    }
+
+    /**
+     * Lets the user pick a maps app (geo: URI) or the OpenStreetMap website. Not every
+     * maps app supports address search via geo:, so the web search is always offered.
+     */
+    private fun openOnMap(query: String) {
+        val geo = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(query)))
+        val web = Intent(Intent.ACTION_VIEW,
+            Uri.parse("https://www.openstreetmap.org/search?query=" + Uri.encode(query)))
+        val chooser = Intent.createChooser(geo, getString(R.string.timetable_check_on_map))
+            .putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(web))
+        try {
+            startActivity(chooser)
+        } catch (e: ActivityNotFoundException) {
+            toast(R.string.timetable_no_maps_app)
+        }
     }
 
     private fun showCampusDialog(existing: Campus?) {
@@ -435,6 +448,41 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         }
     }
 
+    /**
+     * Spinner over all buildings, those of the active term's university first. Position 0
+     * is a "none" entry whose label [noneLabel] may change later (see [setNoneLabel]).
+     */
+    private inner class BuildingPicker(noneLabel: String, initialBuildingId: Long?) {
+        private val term = data.terms.firstOrNull { it.id == activeTermId }
+        private val campusNames = data.campuses.associate { it.id to it.name }
+        val buildings = data.buildings.sortedWith(compareBy({ it.campusId != term?.campusId },
+            { campusNames[it.campusId] }, { it.name }))
+        private val labels = mutableListOf(noneLabel).apply {
+            addAll(buildings.map {
+                if (it.campusId == term?.campusId) it.name else "${campusNames[it.campusId]} · ${it.name}"
+            })
+        }
+        private val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, labels)
+            .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        val spinner = Spinner(requireContext()).apply {
+            adapter = this@BuildingPicker.adapter
+            setSelection(buildings.indexOfFirst { it.id == initialBuildingId } + 1)
+        }
+
+        fun buildingId(): Long? = buildings.getOrNull(spinner.selectedItemPosition - 1)?.id
+
+        fun setNoneLabel(label: String) {
+            if (labels[0] != label) { labels[0] = label; adapter.notifyDataSetChanged() }
+        }
+
+        /** Adds a label and the spinner, or nothing when there are no buildings yet. */
+        fun addTo(layout: LinearLayout) {
+            if (buildings.isEmpty()) return
+            layout.addView(TextView(requireContext()).apply { text = getString(R.string.timetable_building) })
+            layout.addView(spinner)
+        }
+    }
+
     private class PlaceFields(val buildingId: () -> Long?, val room: () -> String?)
 
     /**
@@ -446,23 +494,17 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         initialBuildingId: Long?, initialRoom: String?,
     ): PlaceFields {
         val ctx = requireContext()
-        val term = data.terms.firstOrNull { it.id == activeTermId }
-        val campusNames = data.campuses.associate { it.id to it.name }
-        val buildings = data.buildings.sortedWith(compareBy({ it.campusId != term?.campusId },
-            { campusNames[it.campusId] }, { it.name }))
-        val buildingSpinner = Spinner(ctx).apply {
-            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item,
-                listOf(getString(R.string.timetable_no_building)) + buildings.map {
-                    if (it.campusId == term?.campusId) it.name else "${campusNames[it.campusId]} · ${it.name}"
-                }).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-            setSelection(buildings.indexOfFirst { it.id == initialBuildingId } + 1)
-        }
+        val picker = BuildingPicker(getString(R.string.timetable_no_building), initialBuildingId)
+        val buildingSpinner = picker.spinner
         val room = EditText(ctx).apply { setText(initialRoom.orEmpty()) }
         val preview = TextView(ctx).apply { textSize = 12f }
-        fun buildingId() = buildings.getOrNull(buildingSpinner.selectedItemPosition - 1)?.id
+        fun buildingId() = picker.buildingId()
         fun roomText() = room.text.toString().trim().ifEmpty { null }
         fun refresh() {
             val course = courses.getOrNull(courseSpinner.selectedItemPosition)
+            val courseBuilding = data.buildings.firstOrNull { it.id == course?.buildingId }
+            picker.setNoneLabel(courseBuilding?.let { getString(R.string.timetable_building_same_as_course, it.name) }
+                ?: getString(R.string.timetable_no_building))
             room.hint = course?.room?.takeIf { it.isNotBlank() }
                 ?.let { getString(R.string.timetable_room_default, it) } ?: getString(R.string.timetable_room)
             val location = course?.let { data.placeOf(activeTermId, it.id, buildingId(), roomText()).eventLocation }
@@ -476,10 +518,7 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         buildingSpinner.onItemSelectedListener = listener
         courseSpinner.onItemSelectedListener = listener
         room.doAfterTextChanged { refresh() }
-        if (buildings.isNotEmpty()) {
-            layout.addView(TextView(ctx).apply { text = getString(R.string.timetable_building) })
-            layout.addView(buildingSpinner)
-        }
+        picker.addTo(layout)
         layout.addView(room)
         layout.addView(preview)
         refresh()
@@ -706,32 +745,15 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         val name = EditText(ctx).apply { hint = getString(R.string.timetable_course_name); setText(existing?.name.orEmpty()) }
         val teacher = EditText(ctx).apply { hint = getString(R.string.timetable_teacher); setText(existing?.teacher.orEmpty()) }
         val room = EditText(ctx).apply { hint = getString(R.string.timetable_course_default_room); setText(existing?.room.orEmpty()) }
-        val colors = ctx.resources.getIntArray(R.array.defaultCalendarColors).toList()
-        val colorSpinner = Spinner(ctx).apply {
-            adapter = object : ArrayAdapter<Int>(ctx, android.R.layout.simple_spinner_item, colors) {
-                private fun colorText(position: Int, convertView: View?, parent: ViewGroup): TextView {
-                    val view = super.getDropDownView(position, convertView, parent) as TextView
-                    val size = (24 * resources.displayMetrics.density).toInt()
-                    val dot = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(colors[position])
-                        setSize(size, size)
-                    }
-                    view.setCompoundDrawablesRelativeWithIntrinsicBounds(dot, null, null, null)
-                    view.compoundDrawablePadding = size / 2
-                    view.text = getString(R.string.timetable_color_n, position + 1)
-                    return view
-                }
-
-                override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
-                    colorText(position, convertView, parent)
-
-                override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View =
-                    colorText(position, convertView, parent)
-            }
-            if (existing != null) setSelection(colors.indexOf(existing.color).coerceAtLeast(0))
-        }
-        layout.addView(name); layout.addView(teacher); layout.addView(room); layout.addView(colorSpinner)
+        val usedColors = data.courses.map { it.color }.toSet()
+        val colorPicker = ColorPicker(existing?.color ?: COURSE_COLORS.firstOrNull { it !in usedColors } ?: COURSE_COLORS[0])
+        val buildingPicker = BuildingPicker(getString(R.string.timetable_no_building), existing?.buildingId)
+        layout.addView(name); layout.addView(teacher)
+        buildingPicker.addTo(layout)
+        layout.addView(room)
+        if (buildingPicker.buildings.isEmpty()) addHint(layout, getString(R.string.timetable_course_building_hint))
+        layout.addView(TextView(ctx).apply { text = getString(R.string.timetable_color); setPadding(0, dp(12), 0, dp(4)) })
+        layout.addView(colorPicker.view)
 
         // Optional date range, e.g. a block course that only meets for a few weeks.
         val term = data.terms.firstOrNull { it.id == activeTermId }
@@ -764,9 +786,13 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
                 val end = if (limited.isChecked) rangeEnd.toEpochDay() else null
                 val course = (existing ?: Course(name = "")).copy(name = name.text.toString(),
                     teacher = teacher.text.toString(), room = room.text.toString(),
-                    color = colors[colorSpinner.selectedItemPosition], startEpochDay = start, endEpochDay = end)
+                    color = colorPicker.selected, startEpochDay = start, endEpochDay = end,
+                    buildingId = buildingPicker.buildingId())
                 launch {
                     if (existing == null) repository.addCourse(course) else repository.updateCourse(course)
+                    if (existing != null && (existing.buildingId != course.buildingId || existing.room != course.room)) {
+                        toast(R.string.timetable_locations_regenerate)
+                    }
                 }
                 true
             }
@@ -968,6 +994,53 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
         picker.show(parentFragmentManager, "timetable_time")
     }
 
+    /** Grid of colour swatches; the selected one gets a ring. */
+    private inner class ColorPicker(initial: Int) {
+        // An existing colour from before this palette stays selectable.
+        private val colors = if (initial in COURSE_COLORS) COURSE_COLORS else listOf(initial) + COURSE_COLORS
+        var selected = initial
+            private set
+        private val swatches = mutableListOf<View>()
+        val view = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
+
+        init {
+            colors.chunked(6).forEach { chunk ->
+                val line = row()
+                chunk.forEach { color ->
+                    val swatch = View(requireContext()).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, dp(40), 1f).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
+                        tag = color
+                        contentDescription = String.format("#%06X", color and 0xFFFFFF)
+                        setOnClickListener { selected = color; refresh() }
+                    }
+                    swatches += swatch
+                    line.addView(swatch)
+                }
+                repeat(6 - chunk.size) {
+                    line.addView(View(requireContext()), LinearLayout.LayoutParams(0, dp(40), 1f).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) })
+                }
+                view.addView(line)
+            }
+            refresh()
+        }
+
+        private fun refresh() {
+            val ring = TextView(requireContext()).currentTextColor
+            swatches.forEach { swatch ->
+                val color = swatch.tag as Int
+                swatch.background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(color)
+                    if (color == selected) setStroke(dp(3), ring)
+                }
+            }
+        }
+    }
+
+    private fun addHint(layout: LinearLayout, text: String) {
+        layout.addView(TextView(requireContext()).apply { this.text = text; textSize = 12f })
+    }
+
     private fun formLayout() = LinearLayout(requireContext()).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(20))
@@ -1041,5 +1114,12 @@ class TimetableEditorFragment : Fragment(R.layout.fragment_timetable_editor) {
 
     private companion object {
         val DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("d/M/u", Locale.getDefault())
+
+        /** Clearly distinct course colours (hue circle, then neutrals), readable with white text. */
+        val COURSE_COLORS = listOf(
+            0xFFD32F2F, 0xFFE64A19, 0xFFF57C00, 0xFFF9A825, 0xFF9E9D24, 0xFF689F38,
+            0xFF2E7D32, 0xFF00897B, 0xFF0097A7, 0xFF0288D1, 0xFF1565C0, 0xFF3949AB,
+            0xFF5E35B1, 0xFF8E24AA, 0xFFC2185B, 0xFF795548, 0xFF546E7A, 0xFF212121,
+        ).map { it.toInt() }
     }
 }

@@ -223,6 +223,9 @@ interface TimetableDao {
     @Query("UPDATE one_time_slots SET buildingId = NULL WHERE buildingId IN (:buildingIds)")
     suspend fun clearOneTimeSlotBuildings(buildingIds: List<Long>)
 
+    @Query("UPDATE courses SET buildingId = NULL WHERE buildingId IN (:buildingIds)")
+    suspend fun clearCourseBuildings(buildingIds: List<Long>)
+
     @Query("DELETE FROM buildings")
     suspend fun deleteAllBuildings()
 

@@ -65,6 +65,8 @@ data class Course(
     /** Optional first/last day the course meets (e.g. a block course inside a term). */
     val startEpochDay: Long? = null,
     val endEpochDay: Long? = null,
+    /** Default building for the course's slots; [room] is the default room in it. */
+    val buildingId: Long? = null,
 ) {
     fun isActiveOn(epochDay: Long): Boolean =
         (startEpochDay == null || epochDay >= startEpochDay) && (endEpochDay == null || epochDay <= endEpochDay)

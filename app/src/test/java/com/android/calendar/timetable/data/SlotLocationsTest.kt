@@ -62,4 +62,23 @@ class SlotLocationsTest {
     fun deletedBuildingIsIgnored() {
         assertEquals("HS 1, 77 Massachusetts Ave, Cambridge", resolve(99, null).eventLocation)
     }
+
+    @Test
+    fun courseDefaultBuildingAppliesToSlotsWithoutOne() {
+        val withBuilding = course.copy(buildingId = 10)
+        assertEquals("Building A, HS 1, 32 Vassar St, Cambridge", resolve(null, null, course = withBuilding).eventLocation)
+        assertEquals("Building A, 2.1, 32 Vassar St, Cambridge", resolve(null, "2.1", course = withBuilding).eventLocation)
+    }
+
+    @Test
+    fun slotInAnotherBuildingDoesNotInheritCourseRoom() {
+        val withBuilding = course.copy(buildingId = 10)
+        assertEquals("Building B, 77 Massachusetts Ave, Cambridge", resolve(11, null, course = withBuilding).eventLocation)
+        assertEquals("Building A, HS 1, 32 Vassar St, Cambridge", resolve(10, null, course = withBuilding).eventLocation)
+    }
+
+    @Test
+    fun courseRoomWithoutCourseBuildingStillApplies() {
+        assertEquals("Building A, HS 1, 32 Vassar St, Cambridge", resolve(10, null).eventLocation)
+    }
 }

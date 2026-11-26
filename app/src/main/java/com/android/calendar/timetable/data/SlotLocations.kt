@@ -28,7 +28,9 @@ object SlotLocations {
 
     /**
      * Resolution rules:
-     * - room: the slot's room, else the course's default room;
+     * - building: the slot's building, else the course's default building;
+     * - room: the slot's room, else the course's default room, unless the slot moved
+     *   to another building than the course's (that room would be in the wrong building);
      * - address: the building's address, else the address of the building's campus,
      *   else (no building) the term's campus address, else none.
      */
@@ -40,11 +42,12 @@ object SlotLocations {
         campuses: Map<Long, Campus>,
         buildings: Map<Long, Building>,
     ): SlotPlace {
-        val building = buildingId?.let(buildings::get)
+        val building = (buildingId ?: course?.buildingId)?.let(buildings::get)
+        val courseRoomApplies = buildingId == null || course?.buildingId == null || buildingId == course.buildingId
         val campus = building?.let { campuses[it.campusId] } ?: term?.campusId?.let(campuses::get)
         return SlotPlace(
             buildingName = building?.name.clean(),
-            room = slotRoom.clean() ?: course?.room.clean(),
+            room = slotRoom.clean() ?: course?.room.takeIf { courseRoomApplies }.clean(),
             address = building?.address.clean() ?: campus?.address.clean(),
             campusName = campus?.name.clean(),
         )

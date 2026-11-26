@@ -36,8 +36,9 @@ object TimetableBackup {
     /**
      * 1: initial. 2: course date range, task kind/end/priority/repeat, checklists.
      * 3: universities and buildings, term university, slot building and room.
+     * 4: course default building.
      */
-    const val VERSION = 3
+    const val VERSION = 4
 
     class InvalidBackupException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
@@ -62,6 +63,7 @@ object TimetableBackup {
                 JSONObject().put("id", it.id).put("name", it.name).put("teacher", it.teacher)
                     .put("room", it.room).put("color", it.color)
                     .putOpt("startEpochDay", it.startEpochDay).putOpt("endEpochDay", it.endEpochDay)
+                    .putOpt("buildingId", it.buildingId)
             }))
             put("courseTerms", JSONArray(data.courseTerms.map {
                 JSONObject().put("courseId", it.courseId).put("termId", it.termId)
@@ -120,7 +122,8 @@ object TimetableBackup {
                 courses = root.objects("courses").map {
                     Course(it.getLong("id"), it.getString("name"), it.optString("teacher"),
                         it.optString("room"), it.getInt("color"),
-                        it.optLongOrNull("startEpochDay"), it.optLongOrNull("endEpochDay"))
+                        it.optLongOrNull("startEpochDay"), it.optLongOrNull("endEpochDay"),
+                        it.optLongOrNull("buildingId"))
                 },
                 courseTerms = root.objects("courseTerms").map {
                     CourseTerm(it.getLong("courseId"), it.getLong("termId"))
@@ -180,7 +183,8 @@ object TimetableBackup {
         val buildingIds = data.buildings.map { it.id }.toSet()
         data.buildings.forEach { check(it.campusId in campusIds, "university") }
         data.terms.forEach { term -> term.campusId?.let { check(it in campusIds, "university") } }
-        (data.regularSlots.map { it.buildingId } + data.oneTimeSlots.map { it.buildingId })
+        (data.regularSlots.map { it.buildingId } + data.oneTimeSlots.map { it.buildingId } +
+            data.courses.map { it.buildingId })
             .forEach { id -> id?.let { check(it in buildingIds, "building") } }
         val taskIds = data.tasks.map { it.id }.toSet()
         data.checklistItems.forEach { check(it.taskId in taskIds, "task") }

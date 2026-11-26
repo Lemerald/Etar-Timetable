@@ -173,6 +173,7 @@ class TimetableRepository private constructor(private val app: Application) {
         val buildingIds = dao.buildings().filter { it.campusId == campus.id }.map { it.id }
         dao.clearRegularSlotBuildings(buildingIds)
         dao.clearOneTimeSlotBuildings(buildingIds)
+        dao.clearCourseBuildings(buildingIds)
         dao.clearTermCampus(campus.id)
         dao.deleteCampus(campus)
     }
@@ -180,6 +181,7 @@ class TimetableRepository private constructor(private val app: Application) {
     suspend fun deleteBuilding(building: Building) = database.withTransaction {
         dao.clearRegularSlotBuildings(listOf(building.id))
         dao.clearOneTimeSlotBuildings(listOf(building.id))
+        dao.clearCourseBuildings(listOf(building.id))
         dao.deleteBuilding(building)
     }
 
